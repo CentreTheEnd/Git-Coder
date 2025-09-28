@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Editor - GitHub Code Editor</title>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Monaco Editor -->
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen active">
+            <div class="login-container">
+                <h1>Git Editor</h1>
+                <p>Connect your GitHub account to start editing code</p>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label for="github-url">GitHub Profile URL</label>
+                        <input type="url" id="github-url" placeholder="https://github.com/username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="github-token">GitHub Personal Access Token</label>
+                        <input type="password" id="github-token" placeholder="Enter your GitHub token" required>
+                        <small>
+                            <a href="https://github.com/settings/tokens" target="_blank">
+                                Create a personal access token
+                            </a>
+                        </small>
+                    </div>
+                    <button type="submit" class="btn-primary">Connect to GitHub</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Editor Screen -->
+        <div id="editor-screen" class="screen">
+            <header class="header">
+                <div class="header-left">
+                    <h2>Git Editor</h2>
+                    <span id="user-info"></span>
+                </div>
+                <div class="header-right">
+                    <button id="logout-btn" class="btn-secondary">Logout</button>
+                </div>
+            </header>
+
+            <div class="main-container">
+                <!-- Sidebar -->
+                <aside class="sidebar">
+                    <div class="sidebar-section">
+                        <h3>Repositories</h3>
+                        <button id="new-repo-btn" class="btn-primary">New Repository</button>
+                        <div id="repos-list" class="repos-list"></div>
+                    </div>
+                    
+                    <div class="sidebar-section">
+                        <h3>File Explorer</h3>
+                        <div id="file-tree" class="file-tree"></div>
+                    </div>
+                </aside>
+
+                <!-- Editor Area -->
+                <main class="editor-area">
+                    <div class="editor-tabs">
+                        <div id="editor-tabs-list" class="tabs-list"></div>
+                    </div>
+                    
+                    <div class="editor-container">
+                        <div class="editor-header">
+                            <span id="current-file"></span>
+                            <div class="editor-actions">
+                                <button id="save-btn" class="btn-primary">Save</button>
+                                <button id="run-btn" class="btn-success">Run</button>
+                                <select id="theme-selector" class="theme-selector">
+                                    <option value="vs">Light</option>
+                                    <option value="vs-dark" selected>Dark</option>
+                                    <option value="hc-black">High Contrast</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- محرر Monaco سيتم إنشاؤه هنا -->
+                        <div id="monaco-container" class="monaco-container"></div>
+                        
+                        <div class="output-container">
+                            <h4>Output</h4>
+                            <pre id="output"></pre>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <!-- New Repository Modal -->
+        <div id="new-repo-modal" class="modal">
+            <div class="modal-content">
+                <h3>Create New Repository</h3>
+                <form id="new-repo-form">
+                    <div class="form-group">
+                        <label for="repo-name">Repository Name</label>
+                        <input type="text" id="repo-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="repo-desc">Description</label>
+                        <textarea id="repo-desc"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="repo-private">
+                            Private Repository
+                        </label>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" id="cancel-repo-btn" class="btn-secondary">Cancel</button>
+                        <button type="submit" class="btn-primary">Create</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

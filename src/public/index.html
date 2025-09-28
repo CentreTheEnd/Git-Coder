@@ -3,123 +3,622 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Git Editor - GitHub Code Editor</title>
+    <title>Git Editor - Advanced GitHub Code Editor</title>
     <link rel="stylesheet" href="css/style.css">
+    <!-- Feather Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
     <!-- Monaco Editor -->
     <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- Login Screen -->
-        <div id="login-screen" class="screen active">
-            <div class="login-container">
+        <!-- Loading Screen -->
+        <div id="loading-screen" class="screen active">
+            <div class="loading-container">
+                <div class="loading-spinner"></div>
                 <h1>Git Editor</h1>
-                <p>Connect your GitHub account to start editing code</p>
-                <form id="login-form">
-                    <div class="form-group">
-                        <label for="github-url">GitHub Profile URL</label>
-                        <input type="url" id="github-url" placeholder="https://github.com/username" required>
+                <p>Loading your coding environment...</p>
+            </div>
+        </div>
+
+        <!-- Login Screen -->
+        <div id="login-screen" class="screen">
+            <div class="login-container">
+                <div class="login-header">
+                    <div class="logo">
+                        <i data-feather="code"></i>
+                        <h1>Git Editor</h1>
                     </div>
+                    <p>Advanced GitHub Code Editor with Full Git Integration</p>
+                </div>
+                
+                <form id="login-form" class="login-form">
                     <div class="form-group">
-                        <label for="github-token">GitHub Personal Access Token</label>
-                        <input type="password" id="github-token" placeholder="Enter your GitHub token" required>
-                        <small>
-                            <a href="https://github.com/settings/tokens" target="_blank">
-                                Create a personal access token
+                        <label for="github-token">
+                            <i data-feather="key"></i>
+                            GitHub Personal Access Token
+                        </label>
+                        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" required>
+                        <div class="form-help">
+                            <a href="https://github.com/settings/tokens" target="_blank" class="help-link">
+                                <i data-feather="help-circle"></i>
+                                Create a token with repo scope
                             </a>
-                        </small>
+                        </div>
                     </div>
-                    <button type="submit" class="btn-primary">Connect to GitHub</button>
+                    
+                    <button type="submit" class="btn btn-primary btn-large btn-full">
+                        <i data-feather="github"></i>
+                        Connect to GitHub
+                    </button>
+                    
+                    <div class="login-features">
+                        <div class="feature">
+                            <i data-feather="edit-3"></i>
+                            <span>Advanced Code Editor</span>
+                        </div>
+                        <div class="feature">
+                            <i data-feather="git-branch"></i>
+                            <span>Full Git Integration</span>
+                        </div>
+                        <div class="feature">
+                            <i data-feather="play"></i>
+                            <span>Code Execution</span>
+                        </div>
+                        <div class="feature">
+                            <i data-feather="cloud"></i>
+                            <span>Cloud Storage</span>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
 
         <!-- Main Editor Screen -->
         <div id="editor-screen" class="screen">
+            <!-- Header -->
             <header class="header">
                 <div class="header-left">
-                    <h2>Git Editor</h2>
-                    <span id="user-info"></span>
+                    <div class="logo-small">
+                        <i data-feather="code"></i>
+                        <span>Git Editor</span>
+                    </div>
+                    <div class="repo-info" id="repo-info">
+                        <span class="repo-name" id="current-repo">No repository selected</span>
+                        <span class="branch-tag" id="current-branch">
+                            <i data-feather="git-branch"></i>
+                            <span>main</span>
+                        </span>
+                    </div>
                 </div>
+                
+                <div class="header-center">
+                    <div class="git-actions">
+                        <button id="pull-btn" class="btn btn-secondary btn-small" title="Pull Changes">
+                            <i data-feather="download"></i>
+                            Pull
+                        </button>
+                        <button id="commit-btn" class="btn btn-secondary btn-small" title="Commit Changes">
+                            <i data-feather="save"></i>
+                            Commit
+                        </button>
+                        <button id="push-btn" class="btn btn-primary btn-small" title="Push Changes">
+                            <i data-feather="upload"></i>
+                            Push
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="header-right">
-                    <button id="logout-btn" class="btn-secondary">Logout</button>
+                    <div class="user-menu">
+                        <div class="user-info" id="user-info">
+                            <img id="user-avatar" src="" alt="User Avatar" class="user-avatar">
+                            <span id="user-name" class="user-name">User</span>
+                        </div>
+                        <button id="settings-btn" class="btn btn-icon" title="Settings">
+                            <i data-feather="settings"></i>
+                        </button>
+                        <button id="logout-btn" class="btn btn-secondary btn-small">
+                            <i data-feather="log-out"></i>
+                            Logout
+                        </button>
+                    </div>
                 </div>
             </header>
 
             <div class="main-container">
                 <!-- Sidebar -->
                 <aside class="sidebar">
-                    <div class="sidebar-section">
-                        <h3>Repositories</h3>
-                        <button id="new-repo-btn" class="btn-primary">New Repository</button>
-                        <div id="repos-list" class="repos-list"></div>
+                    <div class="sidebar-tabs">
+                        <button class="sidebar-tab active" data-tab="explorer">
+                            <i data-feather="folder"></i>
+                            <span>Explorer</span>
+                        </button>
+                        <button class="sidebar-tab" data-tab="search">
+                            <i data-feather="search"></i>
+                            <span>Search</span>
+                        </button>
+                        <button class="sidebar-tab" data-tab="git">
+                            <i data-feather="git-branch"></i>
+                            <span>Git</span>
+                        </button>
+                        <button class="sidebar-tab" data-tab="terminal">
+                            <i data-feather="terminal"></i>
+                            <span>Terminal</span>
+                        </button>
                     </div>
-                    
-                    <div class="sidebar-section">
-                        <h3>File Explorer</h3>
-                        <div id="file-tree" class="file-tree"></div>
+
+                    <!-- Explorer Tab -->
+                    <div id="explorer-tab" class="sidebar-content active">
+                        <!-- Repository Selection -->
+                        <div class="sidebar-section">
+                            <div class="section-header">
+                                <h3>Repositories</h3>
+                                <div class="section-actions">
+                                    <button id="refresh-repos-btn" class="btn btn-icon" title="Refresh">
+                                        <i data-feather="refresh-cw"></i>
+                                    </button>
+                                    <button id="new-repo-btn" class="btn btn-icon" title="New Repository">
+                                        <i data-feather="plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="repo-tabs">
+                                <button class="repo-tab active" data-repo-type="all">All</button>
+                                <button class="repo-tab" data-repo-type="public">Public</button>
+                                <button class="repo-tab" data-repo-type="private">Private</button>
+                            </div>
+                            
+                            <div class="repos-list" id="repos-list">
+                                <div class="empty-state">
+                                    <i data-feather="folder"></i>
+                                    <p>No repositories found</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- File Explorer -->
+                        <div class="sidebar-section">
+                            <div class="section-header">
+                                <h3>File Explorer</h3>
+                                <div class="section-actions">
+                                    <button id="new-file-btn" class="btn btn-icon" title="New File">
+                                        <i data-feather="file"></i>
+                                    </button>
+                                    <button id="new-folder-btn" class="btn btn-icon" title="New Folder">
+                                        <i data-feather="folder-plus"></i>
+                                    </button>
+                                    <button id="upload-file-btn" class="btn btn-icon" title="Upload File">
+                                        <i data-feather="upload"></i>
+                                    </button>
+                                    <button id="refresh-files-btn" class="btn btn-icon" title="Refresh">
+                                        <i data-feather="refresh-cw"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="branch-selector">
+                                <select id="branch-select" class="branch-select">
+                                    <option value="">Loading branches...</option>
+                                </select>
+                                <button id="new-branch-btn" class="btn btn-icon" title="New Branch">
+                                    <i data-feather="git-branch"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="file-explorer" id="file-explorer">
+                                <div class="empty-state">
+                                    <i data-feather="folder"></i>
+                                    <p>Select a repository to view files</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Search Tab -->
+                    <div id="search-tab" class="sidebar-content">
+                        <div class="sidebar-section">
+                            <h3>Search</h3>
+                            <div class="search-box">
+                                <input type="text" id="search-input" placeholder="Search in repository...">
+                                <button id="search-btn" class="btn btn-primary">
+                                    <i data-feather="search"></i>
+                                </button>
+                            </div>
+                            <div id="search-results" class="search-results">
+                                <div class="empty-state">
+                                    <i data-feather="search"></i>
+                                    <p>Enter a search term to find files</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Git Tab -->
+                    <div id="git-tab" class="sidebar-content">
+                        <div class="sidebar-section">
+                            <h3>Git Status</h3>
+                            <div id="git-status" class="git-status">
+                                <div class="status-item">
+                                    <span class="status-label">Branch:</span>
+                                    <span id="current-branch-status" class="status-value">main</span>
+                                </div>
+                                <div class="status-item">
+                                    <span class="status-label">Changes:</span>
+                                    <span id="changes-count" class="status-value">0</span>
+                                </div>
+                            </div>
+                            <div id="changed-files" class="changed-files">
+                                <div class="empty-state">
+                                    <i data-feather="check-circle"></i>
+                                    <p>No uncommitted changes</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="sidebar-section">
+                            <h3>Commit History</h3>
+                            <div id="commit-history" class="commit-history">
+                                <div class="empty-state">
+                                    <i data-feather="git-commit"></i>
+                                    <p>No commit history</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="sidebar-section">
+                            <h3>Pull Requests</h3>
+                            <button id="new-pr-btn" class="btn btn-primary btn-full">
+                                <i data-feather="git-pull-request"></i>
+                                New Pull Request
+                            </button>
+                            <div id="pull-requests" class="pull-requests">
+                                <div class="empty-state">
+                                    <i data-feather="git-pull-request"></i>
+                                    <p>No pull requests</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Terminal Tab -->
+                    <div id="terminal-tab" class="sidebar-content">
+                        <div class="sidebar-section">
+                            <h3>Terminal</h3>
+                            <div class="terminal-actions">
+                                <button id="clear-terminal-btn" class="btn btn-secondary">
+                                    <i data-feather="trash-2"></i>
+                                    Clear
+                                </button>
+                                <button id="new-terminal-btn" class="btn btn-primary">
+                                    <i data-feather="plus"></i>
+                                    New Terminal
+                                </button>
+                            </div>
+                            <div id="terminal" class="terminal">
+                                <div class="terminal-content" id="terminal-content">
+                                    <div class="terminal-welcome">
+                                        <p>Welcome to Git Editor Terminal</p>
+                                        <p>Type 'help' for available commands</p>
+                                    </div>
+                                    <div class="terminal-line">
+                                        <span class="terminal-prompt">$ </span>
+                                        <input type="text" class="terminal-input" id="terminal-input">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </aside>
 
                 <!-- Editor Area -->
                 <main class="editor-area">
-                    <div class="editor-tabs">
-                        <div id="editor-tabs-list" class="tabs-list"></div>
+                    <div class="editor-tabs" id="editor-tabs">
+                        <div class="tabs-list" id="tabs-list"></div>
+                        <div class="tab-actions">
+                            <button id="split-view-btn" class="btn btn-icon" title="Split View">
+                                <i data-feather="layout"></i>
+                            </button>
+                            <button id="close-all-tabs-btn" class="btn btn-icon" title="Close All Tabs">
+                                <i data-feather="x"></i>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="editor-container">
-                        <div class="editor-header">
-                            <span id="current-file"></span>
-                            <div class="editor-actions">
-                                <button id="save-btn" class="btn-primary">Save</button>
-                                <button id="run-btn" class="btn-success">Run</button>
-                                <select id="theme-selector" class="theme-selector">
-                                    <option value="vs">Light</option>
-                                    <option value="vs-dark" selected>Dark</option>
-                                    <option value="hc-black">High Contrast</option>
-                                </select>
+                        <!-- File Viewer (Read-only) -->
+                        <div id="file-viewer" class="file-viewer active">
+                            <div class="file-header">
+                                <div class="file-info">
+                                    <i data-feather="file" class="file-icon"></i>
+                                    <span id="viewer-file-path" class="file-path">No file selected</span>
+                                </div>
+                                <div class="file-actions">
+                                    <button id="edit-file-btn" class="btn btn-primary">
+                                        <i data-feather="edit"></i>
+                                        Edit
+                                    </button>
+                                    <button id="download-file-btn" class="btn btn-secondary">
+                                        <i data-feather="download"></i>
+                                        Download
+                                    </button>
+                                    <button id="delete-file-btn" class="btn btn-danger">
+                                        <i data-feather="trash-2"></i>
+                                        Delete
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="file-content">
+                                <pre id="file-content-display"><code>Select a file to view its content</code></pre>
                             </div>
                         </div>
-                        
-                        <!-- محرر Monaco سيتم إنشاؤه هنا -->
-                        <div id="monaco-container" class="monaco-container"></div>
+
+                        <!-- Code Editor (Edit mode) -->
+                        <div id="code-editor-container" class="code-editor-container">
+                            <div class="editor-header">
+                                <div class="editor-info">
+                                    <i data-feather="edit-3" class="edit-icon"></i>
+                                    <span id="editor-file-path" class="file-path">Editing: </span>
+                                </div>
+                                <div class="editor-actions">
+                                    <select id="language-selector" class="language-selector">
+                                        <option value="auto">Auto Detect</option>
+                                        <option value="javascript">JavaScript</option>
+                                        <option value="typescript">TypeScript</option>
+                                        <option value="python">Python</option>
+                                        <option value="java">Java</option>
+                                        <option value="cpp">C++</option>
+                                        <option value="html">HTML</option>
+                                        <option value="css">CSS</option>
+                                    </select>
+                                    <button id="format-btn" class="btn btn-secondary">
+                                        <i data-feather="align-left"></i>
+                                        Format
+                                    </button>
+                                    <button id="run-btn" class="btn btn-success">
+                                        <i data-feather="play"></i>
+                                        Run
+                                    </button>
+                                    <button id="save-btn" class="btn btn-primary">
+                                        <i data-feather="save"></i>
+                                        Save
+                                    </button>
+                                    <button id="cancel-edit-btn" class="btn btn-secondary">
+                                        <i data-feather="x"></i>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="monaco-container" class="monaco-container"></div>
+                        </div>
                         
                         <div class="output-container">
-                            <h4>Output</h4>
-                            <pre id="output"></pre>
+                            <div class="output-tabs">
+                                <button class="output-tab active" data-output="output">
+                                    <i data-feather="terminal"></i>
+                                    Output
+                                </button>
+                                <button class="output-tab" data-output="problems">
+                                    <i data-feather="alert-circle"></i>
+                                    Problems
+                                </button>
+                                <button class="output-tab" data-output="console">
+                                    <i data-feather="message-square"></i>
+                                    Console
+                                </button>
+                            </div>
+                            <div class="output-content">
+                                <div id="output-pane" class="output-pane active">
+                                    <pre id="output-content"><code>Code output will appear here</code></pre>
+                                </div>
+                                <div id="problems-pane" class="output-pane">
+                                    <pre id="problems-content"><code>No problems detected</code></pre>
+                                </div>
+                                <div id="console-pane" class="output-pane">
+                                    <pre id="console-content"><code>Console messages will appear here</code></pre>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </main>
             </div>
         </div>
+    </div>
 
-        <!-- New Repository Modal -->
-        <div id="new-repo-modal" class="modal">
-            <div class="modal-content">
-                <h3>Create New Repository</h3>
-                <form id="new-repo-form">
-                    <div class="form-group">
-                        <label for="repo-name">Repository Name</label>
-                        <input type="text" id="repo-name" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="repo-desc">Description</label>
-                        <textarea id="repo-desc"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="repo-private">
-                            Private Repository
-                        </label>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancel-repo-btn" class="btn-secondary">Cancel</button>
-                        <button type="submit" class="btn-primary">Create</button>
-                    </div>
-                </form>
+    <!-- Modals -->
+    <div id="new-repo-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i data-feather="plus"></i>
+                    Create New Repository
+                </h3>
+                <button class="btn btn-icon modal-close">
+                    <i data-feather="x"></i>
+                </button>
             </div>
+            <form id="new-repo-form" class="modal-form">
+                <div class="form-group">
+                    <label for="repo-name">
+                        <i data-feather="folder"></i>
+                        Repository Name
+                    </label>
+                    <input type="text" id="repo-name" required placeholder="my-awesome-project">
+                </div>
+                <div class="form-group">
+                    <label for="repo-desc">
+                        <i data-feather="file-text"></i>
+                        Description
+                    </label>
+                    <textarea id="repo-desc" placeholder="A brief description of your project"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="repo-private">
+                        <span class="checkmark"></span>
+                        <i data-feather="lock"></i>
+                        Private Repository
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="repo-auto-init" checked>
+                        <span class="checkmark"></span>
+                        <i data-feather="git-branch"></i>
+                        Initialize with README
+                    </label>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancel-repo-btn">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="plus"></i>
+                        Create Repository
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
+
+    <div id="new-file-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i data-feather="file"></i>
+                    Create New File
+                </h3>
+                <button class="btn btn-icon modal-close">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            <form id="new-file-form" class="modal-form">
+                <div class="form-group">
+                    <label for="file-path">
+                        <i data-feather="folder"></i>
+                        File Path
+                    </label>
+                    <input type="text" id="file-path" required placeholder="src/main.js">
+                </div>
+                <div class="form-group">
+                    <label for="file-content">
+                        <i data-feather="edit-3"></i>
+                        Content
+                    </label>
+                    <textarea id="file-content" placeholder="File content" rows="6"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="file-commit-message">
+                        <i data-feather="message-circle"></i>
+                        Commit Message
+                    </label>
+                    <input type="text" id="file-commit-message" required value="Add new file">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancel-file-btn">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="plus"></i>
+                        Create File
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="commit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i data-feather="git-commit"></i>
+                    Commit Changes
+                </h3>
+                <button class="btn btn-icon modal-close">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            <form id="commit-form" class="modal-form">
+                <div class="form-group">
+                    <label for="commit-message">
+                        <i data-feather="message-circle"></i>
+                        Commit Message
+                    </label>
+                    <textarea id="commit-message" required placeholder="Describe your changes..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Changed Files</label>
+                    <div id="changed-files-list" class="changed-files-list">
+                        <div class="empty-state">
+                            <i data-feather="check-circle"></i>
+                            <p>No files to commit</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancel-commit-btn">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="git-commit"></i>
+                        Commit Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="upload-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i data-feather="upload"></i>
+                    Upload Files
+                </h3>
+                <button class="btn btn-icon modal-close">
+                    <i data-feather="x"></i>
+                </button>
+            </div>
+            <form id="upload-form" class="modal-form">
+                <div class="form-group">
+                    <label for="file-upload">
+                        <i data-feather="file"></i>
+                        Select Files
+                    </label>
+                    <input type="file" id="file-upload" multiple>
+                    <div class="upload-dropzone" id="upload-dropzone">
+                        <i data-feather="upload-cloud"></i>
+                        <p>Drop files here or click to browse</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="upload-commit-message">
+                        <i data-feather="message-circle"></i>
+                        Commit Message
+                    </label>
+                    <input type="text" id="upload-commit-message" value="Upload files">
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancel-upload-btn">
+                        Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i data-feather="upload"></i>
+                        Upload Files
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu"></div>
+
+    <!-- Notification System -->
+    <div id="notifications" class="notifications"></div>
 
     <script src="js/app.js"></script>
 </body>

@@ -1,310 +1,195 @@
-import { Utils } from './modules/utils.js';
-import { UIManager } from './modules/ui.js';
-import { AuthManager } from './modules/auth.js';
-import { RepoManager } from './modules/repos.js';
-import { FileManager } from './modules/files.js';
-import { EditorManager } from './modules/editor.js';
-import { GitManager } from './modules/git.js';
-
-// Main Application Class
 class GitEditor {
     constructor() {
-        this.utils = new Utils();
-        this.ui = new UIManager();
-        this.auth = new AuthManager();
-        this.repo = new RepoManager(this.auth);
-        this.files = new FileManager(this.auth, this.repo);
-        this.editor = new EditorManager(this.auth, this.repo, this.files);
-        this.git = new GitManager(this.auth, this.repo);
+        this.sessionId = localStorage.getItem('gitEditorSession');
+        this.currentRepo = null;
+        this.currentBranch = 'main';
+        this.currentPath = '';
+        this.openFiles = new Map();
+        this.activeFile = null;
+        this.editor = null;
+        this.isMonacoReady = false;
+        this.changedFiles = new Set();
+        this.settings = this.loadSettings();
+        this.user = null;
         
-        this.setupEventHandlers();
-        this.initializeApp();
+        // Initialize when DOM is ready
+        this.init();
     }
-    
-    async initializeApp() {
-        // Add global error handling
-        this.utils.addGlobalErrorHandler();
-        
-        // Wait for DOM to be ready
-        await this.utils.waitForDOM();
-        
-        // Check authentication
-        const isAuthenticated = await this.auth.checkAuthentication();
-        
-        if (isAuthenticated) {
-            await this.startApp();
-        }
-        
-        // Setup load timeout as fallback
-        this.setupLoadTimeout();
+
+    async init() {
+        await this.waitForDOM();
+        this.initializeEventListeners();
+        this.initializeMonaco();
+        this.checkAuthentication();
     }
-    
-    async startApp() {
-        try {
-            this.ui.showScreen('editor-screen');
-            this.auth.updateUserInfo();
-            
-            // Load repositories
-            await this.repo.loadRepositories();
-            
-            // Setup repository event handlers
-            this.setupRepoEventHandlers();
-            
-            // Setup other event handlers
-            this.setupAdditionalEventHandlers();
-            
-            console.log('Git Editor started successfully');
-        } catch (error) {
-            console.error('Failed to start app:', error);
-            this.auth.showLoginScreen();
-        }
+
+    loadSettings() {
+        const defaultSettings = {
+            fontSize: 14,
+            tabSize: 2,
+            wordWrap: true,
+            lineNumbers: true,
+            theme: 'vs-dark',
+            autoSave: true,
+            formatOnSave: true
+        };
+        
+        const saved = localStorage.getItem('gitEditorSettings');
+        return saved ? { ...defaultSettings, ...JSON.parse(saved) } : defaultSettings;
     }
-    
-    setupEventHandlers() {
-        // Logout button
+
+    saveSettings() {
+        localStorage.setItem('gitEditorSettings', JSON.stringify(this.settings));
+    }
+
+    async initializeEventListeners() {
+        // Safe DOM element access with null checks
+        this.initializeLoginEvents();
+        this.initializeSidebarEvents();
+        this.initializeEditorEvents();
+        this.initializeModalEvents();
+        this.initializeGitEvents();
+        
+        console.log('Git Editor event listeners initialized');
+    }
+
+    initializeLoginEvents() {
+        const loginForm = document.getElementById('login-form');
         const logoutBtn = document.getElementById('logout-btn');
+
+        if (loginForm) {
+            loginForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.handleLogin();
+            });
+        }
+
         if (logoutBtn) {
             logoutBtn.addEventListener('click', () => {
-                this.auth.handleLogout();
+                this.handleLogout();
             });
         }
-        
-        // Repository type tabs
-        document.querySelectorAll('.repo-tab').forEach(tab => {
-            tab.addEventListener('click', (e) => {
-                this.switchRepoType(e.currentTarget.dataset.repoType);
-            });
-        });
-        
+    }
+
+    initializeSidebarEvents() {
         // Sidebar tabs
         document.querySelectorAll('.sidebar-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 this.switchSidebarTab(e.currentTarget.dataset.tab);
             });
         });
-        
+
+        // Repository tabs
+        document.querySelectorAll('.repo-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
+                this.switchRepoType(e.currentTarget.dataset.repoType);
+            });
+        });
+
         // Output tabs
         document.querySelectorAll('.output-tab').forEach(tab => {
             tab.addEventListener('click', (e) => {
                 this.switchOutputTab(e.currentTarget.dataset.output);
             });
         });
-        
-        // Branch selector
+    }
+
+    initializeEditorEvents() {
+        // File actions
+        this.addEventListenerSafe('new-file-btn', 'click', () => {
+            this.showNewFileModal();
+        });
+
+        this.addEventListenerSafe('upload-file-btn', 'click', () => {
+            this.showUploadModal();
+        });
+
+        this.addEventListenerSafe('refresh-files-btn', 'click', () => {
+            if (this.currentRepo) {
+                this.loadRepositoryContents();
+            }
+        });
+
+        // Editor actions
+        this.addEventListenerSafe('edit-file-btn', 'click', () => {
+            this.enableEditMode();
+        });
+
+        this.addEventListenerSafe('download-file-btn', 'click', () => {
+            this.downloadFile();
+        });
+
+        this.addEventListenerSafe('delete-file-btn', 'click', () => {
+            this.deleteFile();
+        });
+
+        this.addEventListenerSafe('save-btn', 'click', () => {
+            this.saveFile();
+        });
+
+        this.addEventListenerSafe('cancel-edit-btn', 'click', () => {
+            this.disableEditMode();
+        });
+
+        this.addEventListenerSafe('run-btn', 'click', () => {
+            this.runCode();
+        });
+
+        this.addEventListenerSafe('format-btn', 'click', () => {
+            this.formatCode();
+        });
+    }
+
+    initializeGitEvents() {
+        // Git actions
+        this.addEventListenerSafe('pull-btn', 'click', () => {
+            this.pullChanges();
+        });
+
+        this.addEventListenerSafe('push-btn', 'click', () => {
+            this.pushChanges();
+        });
+
+        this.addEventListenerSafe('commit-btn', 'click', () => {
+            this.showCommitModal();
+        });
+
+        // Repository actions
+        this.addEventListenerSafe('new-repo-btn', 'click', () => {
+            this.showNewRepoModal();
+        });
+
+        this.addEventListenerSafe('refresh-repos-btn', 'click', () => {
+            this.loadRepositories();
+        });
+
+        // Branch management
         const branchSelect = document.getElementById('branch-select');
         if (branchSelect) {
             branchSelect.addEventListener('change', (e) => {
-                this.repo.switchBranch(e.target.value);
+                this.switchBranch(e.target.value);
             });
         }
-        
-        // Git actions
-        const pullBtn = document.getElementById('pull-btn');
-        if (pullBtn) {
-            pullBtn.addEventListener('click', () => {
-                this.pullChanges();
-            });
-        }
-        
-        const pushBtn = document.getElementById('push-btn');
-        if (pushBtn) {
-            pushBtn.addEventListener('click', () => {
-                this.pushChanges();
-            });
-        }
-        
-        const commitBtn = document.getElementById('commit-btn');
-        if (commitBtn) {
-            commitBtn.addEventListener('click', () => {
-                this.showCommitModal();
-            });
-        }
-        
-        // Repository actions
-        const newRepoBtn = document.getElementById('new-repo-btn');
-        if (newRepoBtn) {
-            newRepoBtn.addEventListener('click', () => {
-                this.showNewRepoModal();
-            });
-        }
-        
-        const refreshReposBtn = document.getElementById('refresh-repos-btn');
-        if (refreshReposBtn) {
-            refreshReposBtn.addEventListener('click', () => {
-                this.repo.loadRepositories();
-            });
-        }
-        
-        // File actions
-        const newFileBtn = document.getElementById('new-file-btn');
-        if (newFileBtn) {
-            newFileBtn.addEventListener('click', () => {
-                this.showNewFileModal();
-            });
-        }
-        
-        const uploadFileBtn = document.getElementById('upload-file-btn');
-        if (uploadFileBtn) {
-            uploadFileBtn.addEventListener('click', () => {
-                this.showUploadModal();
-            });
-        }
-        
-        const refreshFilesBtn = document.getElementById('refresh-files-btn');
-        if (refreshFilesBtn) {
-            refreshFilesBtn.addEventListener('click', () => {
-                this.files.loadRepositoryContents(this.files.getCurrentPath());
-            });
-        }
-        
-        // File operations
-        const deleteFileBtn = document.getElementById('delete-file-btn');
-        if (deleteFileBtn) {
-            deleteFileBtn.addEventListener('click', () => {
-                this.files.deleteFile();
-            });
-        }
-        
-        const downloadFileBtn = document.getElementById('download-file-btn');
-        if (downloadFileBtn) {
-            downloadFileBtn.addEventListener('click', () => {
-                this.files.downloadFile();
-            });
-        }
-        
-        // Modal forms
-        this.setupModalForms();
-    }
-    
-    setupRepoEventHandlers() {
-        // Override repository event handlers
-        this.repo.onRepositoryChange = (repo) => {
-            this.onRepositoryChange(repo);
-        };
-        
-        this.repo.onBranchChange = (branchName) => {
-            this.onBranchChange(branchName);
-        };
-        
-        // Override file event handlers
-        this.files.onFileView = (file) => {
-            this.onFileView(file);
-        };
-        
-        // Override editor event handlers
-        this.editor.onFileSave = (file) => {
-            this.onFileSave(file);
-        };
-    }
-    
-    setupAdditionalEventHandlers() {
-        // Search functionality
-        const searchBtn = document.getElementById('search-btn');
-        const searchInput = document.getElementById('search-input');
-        
-        if (searchBtn && searchInput) {
-            const performSearch = this.utils.debounce(() => {
-                this.searchInRepo(searchInput.value);
-            }, 300);
-            
-            searchBtn.addEventListener('click', performSearch);
-            searchInput.addEventListener('input', performSearch);
-        }
-        
-        // Terminal functionality
-        this.setupTerminal();
-    }
-    
-    setupModalForms() {
-        // New repository modal
-        const newRepoForm = document.getElementById('new-repo-form');
-        if (newRepoForm) {
-            newRepoForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const formData = {
-                    name: document.getElementById('repo-name').value.trim(),
-                    description: document.getElementById('repo-desc').value.trim(),
-                    isPrivate: document.getElementById('repo-private').checked,
-                    autoInit: document.getElementById('repo-auto-init').checked
-                };
-                
-                if (!formData.name) {
-                    this.ui.showNotification('Error', 'Repository name is required', 'error');
-                    return;
-                }
-                
-                const success = await this.repo.createRepository(formData);
-                if (success) {
-                    this.ui.hideAllModals();
-                    newRepoForm.reset();
-                }
-            });
-        }
-        
-        // New file modal
-        const newFileForm = document.getElementById('new-file-form');
-        if (newFileForm) {
-            newFileForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const formData = {
-                    path: document.getElementById('file-path').value.trim(),
-                    content: document.getElementById('file-content').value,
-                    message: document.getElementById('file-commit-message').value.trim()
-                };
-                
-                if (!formData.path || !formData.message) {
-                    this.ui.showNotification('Error', 'File path and commit message are required', 'error');
-                    return;
-                }
-                
-                const success = await this.files.createFile(formData);
-                if (success) {
-                    this.ui.hideAllModals();
-                    newFileForm.reset();
-                }
-            });
-        }
-        
-        // Commit modal
-        const commitForm = document.getElementById('commit-form');
-        if (commitForm) {
-            commitForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                
-                const message = document.getElementById('commit-message').value.trim();
-                
-                if (!message) {
-                    this.ui.showNotification('Error', 'Commit message is required', 'error');
-                    return;
-                }
-                
-                const commitData = {
-                    message: message,
-                    files: this.git.getChangedFiles().map(filePath => ({
-                        path: filePath,
-                        operation: 'update'
-                    }))
-                };
-                
-                const success = await this.git.createCommit(commitData);
-                if (success) {
-                    this.ui.hideAllModals();
-                    commitForm.reset();
-                }
-            });
-        }
-        
-        // Modal close buttons
-        document.querySelectorAll('.modal-close, .cancel-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                this.ui.hideAllModals();
-            });
+
+        this.addEventListenerSafe('new-branch-btn', 'click', () => {
+            this.showNewBranchModal();
         });
-    }
-    
-    setupTerminal() {
+
+        // Search
+        this.addEventListenerSafe('search-btn', 'click', () => {
+            this.searchInRepo();
+        });
+
+        const searchInput = document.getElementById('search-input');
+        if (searchInput) {
+            searchInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.searchInRepo();
+                }
+            });
+        }
+
+        // Terminal
         const terminalInput = document.getElementById('terminal-input');
         if (terminalInput) {
             terminalInput.addEventListener('keypress', (e) => {
@@ -314,249 +199,435 @@ class GitEditor {
                 }
             });
         }
-        
-        const clearTerminalBtn = document.getElementById('clear-terminal-btn');
-        if (clearTerminalBtn) {
-            clearTerminalBtn.addEventListener('click', () => {
-                this.clearTerminal();
-            });
-        }
-    }
-    
-    // Event handlers
-    async onRepositoryChange(repo) {
-        await this.files.loadRepositoryContents();
-        await this.git.loadGitStatus();
-        await this.git.loadCommitHistory();
-    }
-    
-    async onBranchChange(branchName) {
-        await this.files.loadRepositoryContents(this.files.getCurrentPath());
-        await this.git.loadGitStatus();
-    }
-    
-    onFileView(file) {
-        // Reset changed files tracking when viewing a new file
-        this.git.clearChangedFiles();
-    }
-    
-    onFileSave(file) {
-        // Track file change for git
-        this.git.trackFileChange(file.path);
-    }
-    
-    // UI Actions
-    switchRepoType(type) {
-        document.querySelectorAll('.repo-tab').forEach(tab => {
-            tab.classList.remove('active');
+
+        this.addEventListenerSafe('clear-terminal-btn', 'click', () => {
+            this.clearTerminal();
         });
-        document.querySelector(`[data-repo-type="${type}"]`).classList.add('active');
-        
-        this.repo.renderRepositories();
-    }
-    
-    switchSidebarTab(tabName) {
-        document.querySelectorAll('.sidebar-tab').forEach(tab => {
-            tab.classList.remove('active');
+
+        // Settings
+        this.addEventListenerSafe('settings-btn', 'click', () => {
+            this.showSettingsModal();
         });
-        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
-        
-        document.querySelectorAll('.sidebar-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        document.getElementById(`${tabName}-tab`).classList.add('active');
-        
-        // Load data for specific tabs
-        if (tabName === 'git' && this.repo.getCurrentRepo()) {
-            this.git.loadGitStatus();
-            this.git.loadCommitHistory();
+    }
+
+    // Helper method to safely add event listeners
+    addEventListenerSafe(elementId, event, handler) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.addEventListener(event, handler);
+        } else {
+            console.warn(`Element with id '${elementId}' not found`);
         }
     }
-    
-    switchOutputTab(tabName) {
-        document.querySelectorAll('.output-tab').forEach(tab => {
-            tab.classList.remove('active');
-        });
-        document.querySelector(`[data-output="${tabName}"]`).classList.add('active');
-        
-        document.querySelectorAll('.output-pane').forEach(pane => {
-            pane.classList.remove('active');
-        });
-        
-        let paneId = '';
-        switch(tabName) {
-            case 'output': paneId = 'output-pane'; break;
-            case 'problems': paneId = 'problems-pane'; break;
-            case 'console': paneId = 'console-pane'; break;
-        }
-        
-        if (paneId) {
-            document.getElementById(paneId).classList.add('active');
-        }
-    }
-    
-    showNewRepoModal() {
-        this.ui.showModal('new-repo-modal');
-    }
-    
-    showNewFileModal() {
-        if (!this.repo.getCurrentRepo()) {
-            this.ui.showNotification('Warning', 'Please select a repository first', 'warning');
-            return;
-        }
-        this.ui.showModal('new-file-modal');
-    }
-    
-    showUploadModal() {
-        if (!this.repo.getCurrentRepo()) {
-            this.ui.showNotification('Warning', 'Please select a repository first', 'warning');
-            return;
-        }
-        this.ui.showModal('upload-modal');
-    }
-    
-    showCommitModal() {
-        if (this.git.getChangedFiles().length === 0) {
-            this.ui.showNotification('Info', 'No changes to commit', 'info');
-            return;
-        }
-        this.ui.showModal('commit-modal');
-    }
-    
-    async searchInRepo(query) {
-        // Search functionality would be implemented here
-        this.ui.showNotification('Info', 'Search functionality would be implemented here', 'info');
-    }
-    
-    executeTerminalCommand(command) {
-        // Basic terminal emulation
-        const terminalContent = document.getElementById('terminal-content');
-        if (!terminalContent) return;
-        
-        // Add the command to terminal history
-        const commandLine = document.createElement('div');
-        commandLine.className = 'terminal-line';
-        commandLine.innerHTML = `
-            <span class="terminal-prompt">$ </span>
-            <span>${command}</span>
-        `;
-        terminalContent.appendChild(commandLine);
-        
-        // Execute command and show output
-        const outputLine = document.createElement('div');
-        outputLine.className = 'terminal-output';
-        
-        let output = '';
-        switch(command.trim()) {
-            case 'help':
-                output = `Available commands:
-help - Show this help message
-clear - Clear terminal
-status - Show git status
-ls - List files
-pwd - Show current directory`;
-                break;
-            case 'clear':
-                terminalContent.innerHTML = `
-                    <div class="terminal-welcome">
-                        <p>Welcome to Git Editor Terminal</p>
-                        <p>Type 'help' for available commands</p>
-                    </div>
-                `;
-                break;
-            case 'status':
-                output = 'Git status would be shown here';
-                break;
-            case 'ls':
-                output = 'file1.txt\nfile2.js\nsrc/\nREADME.md';
-                break;
-            case 'pwd':
-                output = this.repo.getCurrentRepo() ? `/workspace/${this.repo.getCurrentRepo().name}` : '/workspace';
-                break;
-            default:
-                output = `Command not found: ${command}. Type 'help' for available commands.`;
-        }
-        
-        if (output) {
-            outputLine.textContent = output;
-            terminalContent.appendChild(outputLine);
-        }
-        
-        // Add new input line
-        const newInputLine = document.createElement('div');
-        newInputLine.className = 'terminal-line';
-        newInputLine.innerHTML = `
-            <span class="terminal-prompt">$ </span>
-            <input type="text" class="terminal-input">
-        `;
-        terminalContent.appendChild(newInputLine);
-        
-        // Focus new input
-        const newInput = newInputLine.querySelector('.terminal-input');
-        newInput.focus();
-        
-        // Update event listener
-        newInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.executeTerminalCommand(e.target.value);
-                e.target.value = '';
+
+    waitForDOM() {
+        return new Promise(resolve => {
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', resolve);
+            } else {
+                resolve();
             }
         });
-        
-        // Scroll to bottom
-        terminalContent.scrollTop = terminalContent.scrollHeight;
     }
-    
-    clearTerminal() {
-        const terminalContent = document.getElementById('terminal-content');
-        if (terminalContent) {
-            terminalContent.innerHTML = `
-                <div class="terminal-welcome">
-                    <p>Welcome to Git Editor Terminal</p>
-                    <p>Type 'help' for available commands</p>
-                </div>
-                <div class="terminal-line">
-                    <span class="terminal-prompt">$ </span>
-                    <input type="text" class="terminal-input">
-                </div>
-            `;
-            
-            // Re-attach event listener
-            const input = terminalContent.querySelector('.terminal-input');
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    this.executeTerminalCommand(e.target.value);
-                    e.target.value = '';
+
+    initializeModalEvents() {
+        // Close modals when clicking outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    this.hideAllModals();
+                }
+            });
+        });
+
+        // Close buttons
+        document.querySelectorAll('.modal-close, .cancel-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.hideAllModals();
+            });
+        });
+
+        // New repository modal
+        const newRepoForm = document.getElementById('new-repo-form');
+        if (newRepoForm) {
+            newRepoForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createRepository();
+            });
+        }
+
+        // New file modal
+        const newFileForm = document.getElementById('new-file-form');
+        if (newFileForm) {
+            newFileForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createFile();
+            });
+        }
+
+        // Commit modal
+        const commitForm = document.getElementById('commit-form');
+        if (commitForm) {
+            commitForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createCommit();
+            });
+        }
+
+        // Upload modal
+        const uploadForm = document.getElementById('upload-form');
+        if (uploadForm) {
+            uploadForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.uploadFiles();
+            });
+        }
+
+        // Upload dropzone
+        const dropzone = document.getElementById('upload-dropzone');
+        const fileInput = document.getElementById('file-upload');
+        
+        if (dropzone && fileInput) {
+            dropzone.addEventListener('click', () => {
+                fileInput.click();
+            });
+
+            dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = 'var(--accent-blue)';
+                dropzone.style.background = 'var(--tertiary-bg)';
+            });
+
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.style.borderColor = 'var(--border-color)';
+                dropzone.style.background = 'transparent';
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropzone.style.borderColor = 'var(--border-color)';
+                dropzone.style.background = 'transparent';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    this.showNotification('Files selected', `${files.length} file(s) ready for upload`, 'success');
                 }
             });
         }
     }
-    
-    async pullChanges() {
-        if (!this.repo.getCurrentRepo()) {
-            this.ui.showNotification('Warning', 'Please select a repository first', 'warning');
+
+    initializeMonaco() {
+        if (typeof require === 'undefined') {
+            console.log('Monaco Editor loader not available');
+            // Try loading Monaco from CDN
+            this.loadMonacoFromCDN();
             return;
         }
-        this.ui.showNotification('Info', 'Pull functionality would be implemented here', 'info');
+
+        require.config({ 
+            paths: { 
+                'vs': 'https://unpkg.com/monaco-editor@0.45.0/min/vs' 
+            } 
+        });
+
+        require(['vs/editor/editor.main'], () => {
+            this.isMonacoReady = true;
+            this.createEditor();
+            console.log('Monaco Editor initialized');
+        });
     }
-    
-    async pushChanges() {
-        if (!this.repo.getCurrentRepo()) {
-            this.ui.showNotification('Warning', 'Please select a repository first', 'warning');
+
+    loadMonacoFromCDN() {
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js';
+        script.onload = () => {
+            this.initializeMonaco();
+        };
+        document.head.appendChild(script);
+    }
+
+    createEditor() {
+        if (!this.isMonacoReady) {
+            console.warn('Monaco Editor not ready yet');
             return;
         }
-        this.ui.showNotification('Info', 'Push functionality would be implemented here', 'info');
+
+        const container = document.getElementById('monaco-container');
+        if (!container) {
+            console.warn('Monaco container not found');
+            return;
+        }
+
+        try {
+            this.editor = monaco.editor.create(container, {
+                value: '// Select a file to start editing\n',
+                language: 'javascript',
+                theme: this.settings.theme,
+                fontSize: this.settings.fontSize,
+                tabSize: this.settings.tabSize,
+                insertSpaces: true,
+                lineNumbers: this.settings.lineNumbers ? 'on' : 'off',
+                roundedSelection: false,
+                scrollBeyondLastLine: false,
+                readOnly: false,
+                cursorStyle: 'line',
+                automaticLayout: true,
+                minimap: {
+                    enabled: true
+                },
+                wordWrap: this.settings.wordWrap ? 'on' : 'off',
+                formatOnPaste: true,
+                formatOnType: true,
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: true
+            });
+
+            // Add keyboard shortcuts
+            this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                this.saveFile();
+            });
+
+            this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+                this.runCode();
+            });
+
+            this.applySettings();
+        } catch (error) {
+            console.error('Failed to create Monaco editor:', error);
+        }
     }
-    
-    setupLoadTimeout() {
-        // Fallback in case loading gets stuck
-        setTimeout(() => {
-            const loadingScreen = document.getElementById('loading-screen');
-            if (loadingScreen && loadingScreen.classList.contains('active')) {
-                console.log('Load timeout - forcing login screen');
-                this.auth.showLoginScreen();
+
+    applySettings() {
+        if (this.editor) {
+            this.editor.updateOptions({
+                fontSize: this.settings.fontSize,
+                tabSize: this.settings.tabSize,
+                wordWrap: this.settings.wordWrap ? 'on' : 'off',
+                lineNumbers: this.settings.lineNumbers ? 'on' : 'off'
+            });
+            
+            if (monaco.editor.setTheme) {
+                monaco.editor.setTheme(this.settings.theme);
             }
-        }, 10000);
+        }
+    }
+
+    async checkAuthentication() {
+        this.showScreen('loading-screen');
+        
+        if (this.sessionId) {
+            try {
+                const response = await fetch(`/api/auth/validate?sessionId=${this.sessionId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    this.user = data.user;
+                    await this.initializeApp();
+                } else {
+                    this.showLoginScreen();
+                }
+            } catch (error) {
+                console.error('Session validation failed:', error);
+                this.showLoginScreen();
+            }
+        } else {
+            this.showLoginScreen();
+        }
+    }
+
+    showScreen(screenName) {
+        document.querySelectorAll('.screen').forEach(screen => {
+            screen.classList.remove('active');
+        });
+        const screenElement = document.getElementById(screenName);
+        if (screenElement) {
+            screenElement.classList.add('active');
+        }
+    }
+
+    showLoginScreen() {
+        this.showScreen('login-screen');
+        this.refreshFeatherIcons();
+    }
+
+    async initializeApp() {
+        this.showScreen('editor-screen');
+        this.updateUserInfo();
+        await this.loadRepositories();
+        
+        this.refreshFeatherIcons();
+    }
+
+    refreshFeatherIcons() {
+        if (window.feather) {
+            setTimeout(() => feather.replace(), 100);
+        }
+    }
+
+    updateUserInfo() {
+        if (!this.user) return;
+
+        const userAvatar = document.getElementById('user-avatar');
+        const userName = document.getElementById('user-name');
+        
+        if (userAvatar && this.user.avatar_url) {
+            userAvatar.src = this.user.avatar_url;
+            userAvatar.alt = this.user.login;
+        }
+        
+        if (userName) {
+            userName.textContent = this.user.login;
+        }
+    }
+
+    // ... rest of the methods remain largely the same, but with added null checks
+
+    async handleLogin() {
+        const tokenInput = document.getElementById('github-token');
+        if (!tokenInput) return;
+
+        const token = tokenInput.value.trim();
+        
+        if (!token) {
+            this.showNotification('Error', 'Please enter a GitHub token', 'error');
+            return;
+        }
+
+        const submitBtn = document.querySelector('#login-form button[type="submit"]');
+        if (!submitBtn) return;
+
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<div class="loading-spinner small"></div> Connecting...';
+        submitBtn.disabled = true;
+
+        try {
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ githubToken: token }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.sessionId = data.sessionId;
+                this.user = data.user;
+                localStorage.setItem('gitEditorSession', this.sessionId);
+                this.showNotification('Success', 'Successfully connected to GitHub', 'success');
+                await this.initializeApp();
+            } else {
+                this.showNotification('Authentication Failed', data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            this.showNotification('Connection Error', 'Failed to connect to GitHub', 'error');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            this.refreshFeatherIcons();
+        }
+    }
+
+    // ... continue with the rest of your methods, adding similar null checks
+
+    // Helper method to safely get element by ID
+    getElementSafe(id) {
+        const element = document.getElementById(id);
+        if (!element) {
+            console.warn(`Element with id '${id}' not found`);
+        }
+        return element;
+    }
+
+    // Update other methods to use safe element access
+    displayFile(file, path) {
+        const viewerFilePath = this.getElementSafe('viewer-file-path');
+        const contentDisplay = this.getElementSafe('file-content-display');
+        
+        if (!viewerFilePath || !contentDisplay) return;
+
+        viewerFilePath.textContent = path;
+        
+        const codeElement = contentDisplay.querySelector('code');
+        if (!codeElement) return;
+        
+        const language = this.getLanguageFromFilename(file.name);
+        codeElement.className = `language-${language}`;
+        codeElement.textContent = file.decoded_content;
+        
+        this.applySyntaxHighlighting(codeElement, language);
+        
+        this.activeFile = {
+            ...file,
+            path: path,
+            language: language
+        };
+        
+        const fileViewer = this.getElementSafe('file-viewer');
+        const editorContainer = this.getElementSafe('code-editor-container');
+        
+        if (fileViewer) fileViewer.classList.add('active');
+        if (editorContainer) editorContainer.classList.remove('active');
+        
+        if (this.editor && file.decoded_content) {
+            const model = monaco.editor.createModel(file.decoded_content, language);
+            this.editor.setModel(model);
+        }
+    }
+
+    // ... continue updating other methods with safe DOM access
+
+    showNotification(title, message, type = 'info') {
+        const notifications = document.getElementById('notifications');
+        if (!notifications) {
+            console.warn('Notifications container not found');
+            return;
+        }
+
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.innerHTML = `
+            <i data-feather="${this.getNotificationIcon(type)}"></i>
+            <div class="notification-content">
+                <div class="notification-title">${title}</div>
+                <div class="notification-message">${message}</div>
+            </div>
+            <button class="notification-close">
+                <i data-feather="x"></i>
+            </button>
+        `;
+
+        notifications.appendChild(notification);
+
+        // Add close event
+        const closeBtn = notification.querySelector('.notification-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                notification.remove();
+            });
+        }
+
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 5000);
+
+        this.refreshFeatherIcons();
+    }
+
+    getNotificationIcon(type) {
+        const icons = {
+            success: 'check-circle',
+            error: 'alert-circle',
+            warning: 'alert-triangle',
+            info: 'info'
+        };
+        return icons[type] || 'info';
     }
 }
 

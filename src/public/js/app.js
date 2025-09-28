@@ -395,7 +395,7 @@ class GitEditor {
     }
 
     async checkAuthentication() {
-        //this.showScreen('loading-screen');
+        this.showScreen('loading-screen');
         
         // إضافة تأخير بسيط لضمان تحميل DOM بالكامل
         await new Promise(resolve => setTimeout(resolve, 500));

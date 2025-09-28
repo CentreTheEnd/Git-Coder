@@ -45,7 +45,7 @@ class GitEditor {
             const loadingScreen = document.getElementById('loading-screen');
             if (loadingScreen && loadingScreen.classList.contains('active')) {
                 console.log('Load timeout - showing login screen');
-                this.showLoginScreen();
+                this.showScreen('login-screen');
             }
         }, 10000); // 10 ثواني
     }
@@ -395,7 +395,7 @@ class GitEditor {
     }
 
     async checkAuthentication() {
-        this.showScreen('loading-screen');
+        //this.showScreen('loading-screen');
         
         // إضافة تأخير بسيط لضمان تحميل DOM بالكامل
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -416,15 +416,15 @@ class GitEditor {
                     await this.initializeApp();
                 } else {
                     console.log('Session validation failed:', data.error);
-                    this.showLoginScreen();
+                    this.showScreen('login-screen');
                 }
             } catch (error) {
                 console.error('Session validation error:', error);
-                this.showLoginScreen();
+                this.showScreen('login-screen');
             }
         } else {
             console.log('No session ID found');
-            this.showLoginScreen();
+            this.showScreen('login-screen');
         }
     }
 

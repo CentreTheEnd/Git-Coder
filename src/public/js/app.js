@@ -9,7 +9,6 @@ class GitEditor {
         this.editor = null;
         this.isMonacoReady = false;
         this.changedFiles = new Set();
-        this.socket = io();
         this.settings = this.loadSettings();
         this.user = null;
         

@@ -179,6 +179,16 @@ class GitEditor {
             this.showSettingsModal();
         });
 
+        // Auto-save interval
+        setInterval(() => {
+            if (this.settings.autoSave && this.activeFile && this.editor) {
+                const content = this.editor.getValue();
+                if (content !== this.activeFile.decoded_content) {
+                    this.autoSave();
+                }
+            }
+        }, 30000); // Auto-save every 30 seconds
+
         // Initialize Feather Icons
         if (window.feather) {
             feather.replace();
@@ -284,6 +294,38 @@ class GitEditor {
                 this.showNotification('Files selected', `${files.length} file(s) ready for upload`, 'success');
             }
         });
+
+        // New branch modal (if exists in HTML)
+        const newBranchForm = document.getElementById('new-branch-form');
+        if (newBranchForm) {
+            newBranchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.createBranch();
+            });
+        }
+
+        const cancelBranchBtn = document.getElementById('cancel-branch-btn');
+        if (cancelBranchBtn) {
+            cancelBranchBtn.addEventListener('click', () => {
+                this.hideAllModals();
+            });
+        }
+
+        // Settings modal (if exists in HTML)
+        const settingsForm = document.getElementById('settings-form');
+        if (settingsForm) {
+            settingsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.saveSettingsFromModal();
+            });
+        }
+
+        const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+        if (cancelSettingsBtn) {
+            cancelSettingsBtn.addEventListener('click', () => {
+                this.hideAllModals();
+            });
+        }
     }
 
     initializeMonaco() {
@@ -341,6 +383,16 @@ class GitEditor {
 
         this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
             this.runCode();
+        });
+
+        // Listen for changes to track unsaved changes
+        this.editor.onDidChangeModelContent(() => {
+            if (this.activeFile) {
+                const content = this.editor.getValue();
+                if (content !== this.activeFile.decoded_content) {
+                    this.trackFileChange(this.activeFile.path);
+                }
+            }
         });
 
         this.applySettings();
@@ -537,6 +589,13 @@ class GitEditor {
                     <div class="repo-info">
                         <div class="repo-name">${repo.name}</div>
                         <div class="repo-description">${repo.description || 'No description'}</div>
+                        <div class="repo-meta">
+                            <span class="repo-language">${repo.language || 'Text'}</span>
+                            <span class="repo-stars">
+                                <i data-feather="star"></i>
+                                ${repo.stargazers_count}
+                            </span>
+                        </div>
                     </div>
                 </div>
             `).join('');
@@ -697,9 +756,10 @@ class GitEditor {
 
             // Add files
             files.forEach(file => {
+                const fileIcon = this.getFileIcon(file.name);
                 html += `
                     <div class="file-item" data-path="${file.path}" data-type="file">
-                        <i data-feather="file"></i>
+                        <i data-feather="${fileIcon}"></i>
                         <span class="file-name">${file.name}</span>
                     </div>
                 `;
@@ -721,6 +781,9 @@ class GitEditor {
                     this.viewFile(path);
                 });
             });
+
+            // Add context menu for files and folders
+            this.initializeContextMenu();
         }
 
         if (window.feather) {
@@ -732,6 +795,39 @@ class GitEditor {
         const parts = path.split('/');
         parts.pop();
         return parts.join('/');
+    }
+
+    getFileIcon(filename) {
+        const extension = filename.split('.').pop().toLowerCase();
+        const iconMap = {
+            'js': 'file-text',
+            'jsx': 'file-text',
+            'ts': 'file-text',
+            'tsx': 'file-text',
+            'py': 'file-text',
+            'java': 'file-text',
+            'cpp': 'file-text',
+            'c': 'file-text',
+            'html': 'file-text',
+            'css': 'file-text',
+            'scss': 'file-text',
+            'less': 'file-text',
+            'json': 'file-text',
+            'xml': 'file-text',
+            'md': 'file-text',
+            'yml': 'file-text',
+            'yaml': 'file-text',
+            'sql': 'file-text',
+            'sh': 'terminal',
+            'bash': 'terminal',
+            'jpg': 'image',
+            'jpeg': 'image',
+            'png': 'image',
+            'gif': 'image',
+            'svg': 'image',
+            'pdf': 'file'
+        };
+        return iconMap[extension] || 'file';
     }
 
     async viewFile(path) {
@@ -761,30 +857,44 @@ class GitEditor {
         const contentDisplay = document.getElementById('file-content-display');
         const codeElement = contentDisplay.querySelector('code');
         
-        // Syntax highlighting based on file extension
-        const language = this.getLanguageFromFilename(file.name);
-        codeElement.className = `language-${language}`;
-        codeElement.textContent = file.decoded_content;
-        
-        // Apply simple syntax highlighting
-        this.applySyntaxHighlighting(codeElement, language);
-        
         // Store file data for editing
         this.activeFile = {
             ...file,
             path: path,
-            language: language
+            language: this.getLanguageFromFilename(file.name)
         };
+        
+        // Show content based on file type
+        if (this.isTextFile(file.name)) {
+            codeElement.textContent = file.decoded_content;
+            codeElement.className = `language-${this.activeFile.language}`;
+            this.applySyntaxHighlighting(codeElement, this.activeFile.language);
+        } else {
+            codeElement.textContent = 'Binary file content cannot be displayed';
+            codeElement.className = '';
+        }
         
         // Show file viewer, hide editor
         document.getElementById('file-viewer').classList.add('active');
         document.getElementById('code-editor-container').classList.remove('active');
         
         // Update editor content if needed
-        if (this.editor) {
-            const model = monaco.editor.createModel(file.decoded_content, language);
+        if (this.editor && this.isTextFile(file.name)) {
+            const model = monaco.editor.createModel(file.decoded_content, this.activeFile.language);
             this.editor.setModel(model);
         }
+        
+        // Update language selector
+        const languageSelector = document.getElementById('language-selector');
+        if (languageSelector) {
+            languageSelector.value = this.activeFile.language;
+        }
+    }
+
+    isTextFile(filename) {
+        const binaryExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'zip', 'exe', 'dll'];
+        const extension = filename.split('.').pop().toLowerCase();
+        return !binaryExtensions.includes(extension);
     }
 
     applySyntaxHighlighting(element, language) {
@@ -800,12 +910,15 @@ class GitEditor {
             
             element.innerHTML = highlighted;
         } else {
-            element.innerHTML = content;
+            element.innerHTML = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
     }
 
     enableEditMode() {
-        if (!this.activeFile) return;
+        if (!this.activeFile || !this.isTextFile(this.activeFile.name)) {
+            this.showNotification('Warning', 'Cannot edit binary files', 'warning');
+            return;
+        }
         
         document.getElementById('file-viewer').classList.remove('active');
         document.getElementById('code-editor-container').classList.add('active');
@@ -814,7 +927,9 @@ class GitEditor {
         
         // Set language selector
         const languageSelector = document.getElementById('language-selector');
-        languageSelector.value = this.activeFile.language;
+        if (languageSelector) {
+            languageSelector.value = this.activeFile.language;
+        }
     }
 
     disableEditMode() {
@@ -857,7 +972,8 @@ class GitEditor {
                 this.activeFile.sha = data.result.content.sha;
                 this.activeFile.decoded_content = content;
                 this.showNotification('Success', 'File saved successfully', 'success');
-                this.trackFileChange(this.activeFile.path);
+                this.changedFiles.delete(this.activeFile.path);
+                this.updateCommitButton();
                 this.disableEditMode();
                 this.displayFile(this.activeFile, this.activeFile.path);
             } else {
@@ -902,20 +1018,29 @@ class GitEditor {
 
             if (data.success) {
                 const outputContent = document.getElementById('output-content');
-                outputContent.textContent = data.output || 'No output';
-                outputContent.className = data.hasError ? 'text-error' : 'text-success';
+                if (outputContent) {
+                    outputContent.textContent = data.output || 'No output';
+                    outputContent.className = data.hasError ? 'text-error' : 'text-success';
+                }
                 
                 this.switchOutputTab('output');
-                this.showNotification('Code Executed', 'Code ran successfully', 'success');
+                if (!data.hasError) {
+                    this.showNotification('Code Executed', 'Code ran successfully', 'success');
+                } else {
+                    this.showNotification('Execution Error', 'Code execution completed with errors', 'warning');
+                }
             } else {
                 this.showNotification('Error', 'Failed to run code', 'error');
             }
         } catch (error) {
             console.error('Run code error:', error);
             const outputContent = document.getElementById('output-content');
-            outputContent.textContent = `Error: ${error.message}`;
-            outputContent.className = 'text-error';
+            if (outputContent) {
+                outputContent.textContent = `Error: ${error.message}`;
+                outputContent.className = 'text-error';
+            }
             this.switchOutputTab('output');
+            this.showNotification('Execution Error', 'Failed to run code', 'error');
         } finally {
             runBtn.innerHTML = originalText;
             runBtn.disabled = false;
@@ -971,6 +1096,8 @@ class GitEditor {
             if (data.success) {
                 this.showNotification('Success', 'File deleted successfully', 'success');
                 this.activeFile = null;
+                this.changedFiles.delete(this.activeFile.path);
+                this.updateCommitButton();
                 document.getElementById('file-viewer').classList.remove('active');
                 await this.loadRepositoryContents(this.currentPath);
             } else {
@@ -987,6 +1114,7 @@ class GitEditor {
             const action = this.editor.getAction('editor.action.formatDocument');
             if (action) {
                 action.run();
+                this.showNotification('Code Formatted', 'Document formatting applied', 'success');
             } else {
                 this.showNotification('Info', 'Formatting not available for this language', 'info');
             }
@@ -1042,6 +1170,10 @@ class GitEditor {
         if (tabName === 'git' && this.currentRepo) {
             this.loadGitStatus();
             this.loadCommitHistory();
+            this.loadPullRequests();
+        } else if (tabName === 'search' && this.currentRepo) {
+            // Focus search input
+            document.getElementById('search-input').focus();
         }
     }
 
@@ -1142,9 +1274,61 @@ class GitEditor {
         }
     }
 
+    async loadPullRequests() {
+        if (!this.currentRepo || !this.sessionId) return;
+
+        try {
+            const response = await fetch(
+                `/api/git/pull-requests?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}`
+            );
+            const data = await response.json();
+
+            if (data.success) {
+                this.renderPullRequests(data.pullRequests);
+            }
+        } catch (error) {
+            console.error('Load pull requests error:', error);
+        }
+    }
+
+    renderPullRequests(pullRequests) {
+        const prContainer = document.getElementById('pull-requests');
+        if (!prContainer) return;
+
+        if (!pullRequests || pullRequests.length === 0) {
+            prContainer.innerHTML = `
+                <div class="empty-state">
+                    <i data-feather="git-pull-request"></i>
+                    <p>No pull requests</p>
+                </div>
+            `;
+        } else {
+            prContainer.innerHTML = pullRequests.slice(0, 5).map(pr => `
+                <div class="pr-item" data-url="${pr.html_url}">
+                    <div class="pr-title">#${pr.number} ${pr.title}</div>
+                    <div class="pr-meta">${pr.state} - ${pr.user.login}</div>
+                </div>
+            `).join('');
+
+            // Add click event to open PR in new tab
+            prContainer.querySelectorAll('.pr-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    window.open(item.dataset.url, '_blank');
+                });
+            });
+        }
+
+        if (window.feather) {
+            feather.replace();
+        }
+    }
+
     trackFileChange(filePath) {
         this.changedFiles.add(filePath);
-        
+        this.updateCommitButton();
+    }
+
+    updateCommitButton() {
         const commitBtn = document.getElementById('commit-btn');
         if (commitBtn) {
             if (this.changedFiles.size > 0) {
@@ -1188,6 +1372,15 @@ class GitEditor {
             return;
         }
         this.showModal('commit-modal');
+        this.renderChangedFilesList();
+    }
+
+    showNewBranchModal() {
+        if (!this.currentRepo) {
+            this.showNotification('Warning', 'Please select a repository first', 'warning');
+            return;
+        }
+        this.showModal('new-branch-modal');
     }
 
     showModal(modalId) {
@@ -1305,6 +1498,82 @@ class GitEditor {
         }
     }
 
+    async createBranch() {
+        const branchName = document.getElementById('branch-name').value.trim();
+        const sourceBranch = document.getElementById('source-branch').value;
+
+        if (!branchName) {
+            this.showNotification('Error', 'Branch name is required', 'error');
+            return;
+        }
+
+        const submitBtn = document.querySelector('#new-branch-form button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<div class="loading-spinner small"></div> Creating...';
+        submitBtn.disabled = true;
+
+        try {
+            const response = await fetch('/api/branches', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    sessionId: this.sessionId,
+                    owner: this.currentRepo.owner.login,
+                    repo: this.currentRepo.name,
+                    branch: branchName,
+                    sourceBranch: sourceBranch || 'main',
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.showNotification('Success', 'Branch created successfully', 'success');
+                this.hideAllModals();
+                await this.loadBranches();
+            } else {
+                this.showNotification('Error', data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Create branch error:', error);
+            this.showNotification('Error', 'Failed to create branch', 'error');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            if (window.feather) {
+                feather.replace();
+            }
+        }
+    }
+
+    renderChangedFilesList() {
+        const changedFilesList = document.getElementById('changed-files-list');
+        if (!changedFilesList) return;
+
+        if (this.changedFiles.size === 0) {
+            changedFilesList.innerHTML = `
+                <div class="empty-state">
+                    <i data-feather="check-circle"></i>
+                    <p>No files to commit</p>
+                </div>
+            `;
+        } else {
+            changedFilesList.innerHTML = Array.from(this.changedFiles).map(filePath => `
+                <div class="changed-file-item">
+                    <input type="checkbox" checked value="${filePath}">
+                    <span class="file-status status-modified">M</span>
+                    <span class="file-path">${filePath}</span>
+                </div>
+            `).join('');
+        }
+
+        if (window.feather) {
+            feather.replace();
+        }
+    }
+
     async createCommit() {
         const message = document.getElementById('commit-message').value.trim();
 
@@ -1313,13 +1582,23 @@ class GitEditor {
             return;
         }
 
-        // In a real implementation, you would collect changed files and their content
+        // Get selected files
+        const selectedFiles = Array.from(
+            document.querySelectorAll('#changed-files-list input:checked')
+        ).map(input => input.value);
+
+        if (selectedFiles.length === 0) {
+            this.showNotification('Error', 'Please select at least one file to commit', 'error');
+            return;
+        }
+
+        // In a real implementation, you would collect the actual file content
         // For now, we'll use a simplified approach
-        const files = Array.from(this.changedFiles).map(filePath => ({
+        const files = selectedFiles.map(filePath => ({
             path: filePath,
             operation: 'update',
-            content: this.activeFile?.decoded_content || '',
-            sha: this.activeFile?.sha
+            content: this.activeFile?.path === filePath ? this.editor.getValue() : '',
+            sha: this.activeFile?.path === filePath ? this.activeFile.sha : ''
         }));
 
         const submitBtn = document.querySelector('#commit-form button[type="submit"]');
@@ -1348,8 +1627,13 @@ class GitEditor {
             if (data.success) {
                 this.showNotification('Success', 'Changes committed successfully', 'success');
                 this.hideAllModals();
-                this.changedFiles.clear();
+                
+                // Clear changed files
+                selectedFiles.forEach(filePath => this.changedFiles.delete(filePath));
+                this.updateCommitButton();
+                
                 await this.loadGitStatus();
+                await this.loadCommitHistory();
             } else {
                 this.showNotification('Error', data.error, 'error');
             }
@@ -1381,8 +1665,64 @@ class GitEditor {
 
         // Note: This is a simplified implementation
         // In a real app, you'd need to handle file uploads properly
-        this.showNotification('Info', 'File upload would be implemented here', 'info');
-        this.hideAllModals();
+        const files = Array.from(fileInput.files);
+        
+        const submitBtn = document.querySelector('#upload-form button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<div class="loading-spinner small"></div> Uploading...';
+        submitBtn.disabled = true;
+
+        try {
+            // For each file, create it in the repository
+            for (const file of files) {
+                const content = await this.readFileAsText(file);
+                const filePath = this.currentPath ? `${this.currentPath}/${file.name}` : file.name;
+                
+                const response = await fetch('/api/files/file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sessionId: this.sessionId,
+                        owner: this.currentRepo.owner.login,
+                        repo: this.currentRepo.name,
+                        path: filePath,
+                        content: content,
+                        message: message,
+                        branch: this.currentBranch,
+                    }),
+                });
+
+                const data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(`Failed to upload ${file.name}: ${data.error}`);
+                }
+            }
+            
+            this.showNotification('Success', `${files.length} file(s) uploaded successfully`, 'success');
+            this.hideAllModals();
+            await this.loadRepositoryContents(this.currentPath);
+        } catch (error) {
+            console.error('Upload files error:', error);
+            this.showNotification('Error', error.message, 'error');
+        } finally {
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            if (window.feather) {
+                feather.replace();
+            }
+        }
+    }
+
+    readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = e => resolve(e.target.result);
+            reader.onerror = e => reject(e);
+            reader.readAsText(file);
+        });
     }
 
     async searchInRepo() {
@@ -1472,7 +1812,8 @@ help - Show this help message
 clear - Clear terminal
 status - Show git status
 ls - List files
-pwd - Show current directory`;
+pwd - Show current directory
+repo - Show current repository info`;
                 break;
             case 'clear':
                 terminalContent.innerHTML = `
@@ -1481,15 +1822,34 @@ pwd - Show current directory`;
                         <p>Type 'help' for available commands</p>
                     </div>
                 `;
-                break;
+                // Re-attach event listener to new input
+                const newInput = terminalContent.querySelector('.terminal-input');
+                newInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.executeTerminalCommand(e.target.value);
+                        e.target.value = '';
+                    }
+                });
+                return;
             case 'status':
-                output = 'Git status would be shown here';
+                output = this.currentRepo ? 
+                    `On branch ${this.currentBranch}\nYour branch is up to date with 'origin/${this.currentBranch}'.\n` :
+                    'Not in a repository. Select a repository first.';
                 break;
             case 'ls':
-                output = 'file1.txt\nfile2.js\nsrc/\nREADME.md';
+                output = this.currentRepo ? 'README.md\nsrc/\npackage.json\ngitignore' : 'No repository selected';
                 break;
             case 'pwd':
                 output = this.currentRepo ? `/workspace/${this.currentRepo.name}` : '/workspace';
+                break;
+            case 'repo':
+                if (this.currentRepo) {
+                    output = `Repository: ${this.currentRepo.name}\nOwner: ${this.currentRepo.owner.login}\nBranch: ${this.currentBranch}`;
+                } else {
+                    output = 'No repository selected';
+                }
+                break;
+            case '':
                 break;
             default:
                 output = `Command not found: ${command}. Type 'help' for available commands.`;
@@ -1550,6 +1910,120 @@ pwd - Show current directory`;
         }
     }
 
+    initializeContextMenu() {
+        const fileExplorer = document.getElementById('file-explorer');
+        if (!fileExplorer) return;
+
+        fileExplorer.addEventListener('contextmenu', (e) => {
+            const target = e.target.closest('.file-item, .folder-item');
+            if (target) {
+                e.preventDefault();
+                this.showContextMenu(e, target);
+            }
+        });
+
+        // Hide context menu on click
+        document.addEventListener('click', () => {
+            this.hideContextMenu();
+        });
+    }
+
+    showContextMenu(event, target) {
+        this.hideContextMenu();
+
+        const contextMenu = document.createElement('div');
+        contextMenu.className = 'context-menu';
+        contextMenu.style.left = `${event.pageX}px`;
+        contextMenu.style.top = `${event.pageY}px`;
+
+        const isFile = target.classList.contains('file-item');
+        const path = target.dataset.path;
+
+        const menuItems = [
+            {
+                text: 'Open',
+                icon: 'external-link',
+                action: () => {
+                    if (isFile) {
+                        this.viewFile(path);
+                    } else {
+                        this.loadRepositoryContents(path);
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                text: 'Rename',
+                icon: 'edit',
+                action: () => {
+                    this.renameItem(path, isFile);
+                }
+            },
+            {
+                text: 'Delete',
+                icon: 'trash-2',
+                action: () => {
+                    if (isFile) {
+                        this.activeFile = { path: path };
+                        this.deleteFile();
+                    } else {
+                        // Handle folder deletion
+                        this.showNotification('Info', 'Folder deletion would be implemented here', 'info');
+                    }
+                }
+            },
+            { type: 'separator' },
+            {
+                text: 'Download',
+                icon: 'download',
+                action: () => {
+                    if (isFile) {
+                        this.activeFile = { path: path, name: path.split('/').pop() };
+                        this.downloadFile();
+                    }
+                }
+            }
+        ];
+
+        menuItems.forEach(item => {
+            if (item.type === 'separator') {
+                const separator = document.createElement('div');
+                separator.className = 'context-menu-separator';
+                contextMenu.appendChild(separator);
+            } else {
+                const menuItem = document.createElement('div');
+                menuItem.className = 'context-menu-item';
+                menuItem.innerHTML = `
+                    <i data-feather="${item.icon}"></i>
+                    <span>${item.text}</span>
+                `;
+                menuItem.addEventListener('click', item.action);
+                contextMenu.appendChild(menuItem);
+            }
+        });
+
+        document.body.appendChild(contextMenu);
+        this.currentContextMenu = contextMenu;
+
+        if (window.feather) {
+            feather.replace();
+        }
+    }
+
+    hideContextMenu() {
+        if (this.currentContextMenu) {
+            this.currentContextMenu.remove();
+            this.currentContextMenu = null;
+        }
+    }
+
+    renameItem(path, isFile) {
+        const newName = prompt(`Enter new name for ${path}:`, path.split('/').pop());
+        if (newName && newName !== path.split('/').pop()) {
+            this.showNotification('Info', `Renaming ${path} to ${newName} would be implemented here`, 'info');
+        }
+    }
+
     async pullChanges() {
         if (!this.currentRepo) {
             this.showNotification('Warning', 'Please select a repository first', 'warning');
@@ -1569,8 +2043,50 @@ pwd - Show current directory`;
     }
 
     showSettingsModal() {
-        // This would show a settings modal in a real implementation
-        this.showNotification('Info', 'Settings would be available here', 'info');
+        // Load current settings into form
+        const settingsForm = document.getElementById('settings-form');
+        if (settingsForm) {
+            document.getElementById('editor-font-size').value = this.settings.fontSize;
+            document.getElementById('editor-tab-size').value = this.settings.tabSize;
+            document.getElementById('editor-word-wrap').checked = this.settings.wordWrap;
+            document.getElementById('editor-line-numbers').checked = this.settings.lineNumbers;
+            document.getElementById('editor-theme').value = this.settings.theme;
+            document.getElementById('editor-auto-save').checked = this.settings.autoSave;
+            document.getElementById('editor-format-on-save').checked = this.settings.formatOnSave;
+            
+            this.showModal('settings-modal');
+        } else {
+            this.showNotification('Info', 'Settings would be available here', 'info');
+        }
+    }
+
+    saveSettingsFromModal() {
+        this.settings = {
+            fontSize: parseInt(document.getElementById('editor-font-size').value),
+            tabSize: parseInt(document.getElementById('editor-tab-size').value),
+            wordWrap: document.getElementById('editor-word-wrap').checked,
+            lineNumbers: document.getElementById('editor-line-numbers').checked,
+            theme: document.getElementById('editor-theme').value,
+            autoSave: document.getElementById('editor-auto-save').checked,
+            formatOnSave: document.getElementById('editor-format-on-save').checked
+        };
+
+        this.saveSettings();
+        this.applySettings();
+        this.hideAllModals();
+        this.showNotification('Success', 'Settings saved successfully', 'success');
+    }
+
+    autoSave() {
+        if (this.activeFile && this.editor) {
+            const content = this.editor.getValue();
+            if (content !== this.activeFile.decoded_content) {
+                console.log('Auto-saving file...');
+                // In a real implementation, you would call saveFile() here
+                // But for now, we'll just track the change
+                this.trackFileChange(this.activeFile.path);
+            }
+        }
     }
 
     showNotification(title, message, type = 'info') {

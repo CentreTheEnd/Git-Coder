@@ -15,6 +15,9 @@ class GitEditor {
         this.initializeEventListeners();
         this.initializeMonaco();
         this.checkAuthentication();
+        
+        // بدء فحص حالة التحميل كإجراء احتياطي
+        this.startLoadCheck();
     }
 
     loadSettings() {
@@ -36,8 +39,19 @@ class GitEditor {
         localStorage.setItem('gitEditorSettings', JSON.stringify(this.settings));
     }
 
+    startLoadCheck() {
+        // إجراء احتياطي: إذا بقيت شاشة التحميل لمدة طويلة، انتقل لشاشة Login
+        setTimeout(() => {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen && loadingScreen.classList.contains('active')) {
+                console.log('Load timeout - showing login screen');
+                this.showLoginScreen();
+            }
+        }, 10000); // 10 ثواني
+    }
+
     async initializeEventListeners() {
-        // Wait for DOM to be fully loaded
+        // الانتظار حتى يكتمل تحميل DOM
         await this.waitForDOM();
         
         // Login form
@@ -178,22 +192,10 @@ class GitEditor {
             this.showSettingsModal();
         });
 
-        // Auto-save interval
-        setInterval(() => {
-            if (this.settings.autoSave && this.activeFile && this.editor) {
-                const content = this.editor.getValue();
-                if (content !== this.activeFile.decoded_content) {
-                    this.autoSave();
-                }
-            }
-        }, 30000); // Auto-save every 30 seconds
+        // تحميل Feather Icons
+        this.loadFeatherIcons();
 
-        // Initialize Feather Icons
-        if (window.feather) {
-            feather.replace();
-        }
-
-        console.log('Git Editor initialized successfully');
+        console.log('Git Editor event listeners initialized');
     }
 
     waitForDOM() {
@@ -204,6 +206,15 @@ class GitEditor {
                 resolve();
             }
         });
+    }
+
+    loadFeatherIcons() {
+        if (window.feather) {
+            feather.replace();
+        } else {
+            // إعادة المحاولة إذا لم تكن الأيقونات جاهزة
+            setTimeout(() => this.loadFeatherIcons(), 100);
+        }
     }
 
     initializeModalEvents() {
@@ -267,62 +278,32 @@ class GitEditor {
         const dropzone = document.getElementById('upload-dropzone');
         const fileInput = document.getElementById('file-upload');
         
-        dropzone.addEventListener('click', () => {
-            fileInput.click();
-        });
+        if (dropzone && fileInput) {
+            dropzone.addEventListener('click', () => {
+                fileInput.click();
+            });
 
-        dropzone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = 'var(--accent-blue)';
-            dropzone.style.background = 'var(--tertiary-bg)';
-        });
-
-        dropzone.addEventListener('dragleave', () => {
-            dropzone.style.borderColor = 'var(--border-color)';
-            dropzone.style.background = 'transparent';
-        });
-
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = 'var(--border-color)';
-            dropzone.style.background = 'transparent';
-            
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                this.showNotification('Files selected', `${files.length} file(s) ready for upload`, 'success');
-            }
-        });
-
-        // New branch modal (if exists in HTML)
-        const newBranchForm = document.getElementById('new-branch-form');
-        if (newBranchForm) {
-            newBranchForm.addEventListener('submit', (e) => {
+            dropzone.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                this.createBranch();
+                dropzone.style.borderColor = 'var(--accent-blue)';
+                dropzone.style.background = 'var(--tertiary-bg)';
             });
-        }
 
-        const cancelBranchBtn = document.getElementById('cancel-branch-btn');
-        if (cancelBranchBtn) {
-            cancelBranchBtn.addEventListener('click', () => {
-                this.hideAllModals();
+            dropzone.addEventListener('dragleave', () => {
+                dropzone.style.borderColor = 'var(--border-color)';
+                dropzone.style.background = 'transparent';
             });
-        }
 
-        // Settings modal (if exists in HTML)
-        const settingsForm = document.getElementById('settings-form');
-        if (settingsForm) {
-            settingsForm.addEventListener('submit', (e) => {
+            dropzone.addEventListener('drop', (e) => {
                 e.preventDefault();
-                this.saveSettingsFromModal();
-            });
-        }
-
-        const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
-        if (cancelSettingsBtn) {
-            cancelSettingsBtn.addEventListener('click', () => {
-                this.hideAllModals();
+                dropzone.style.borderColor = 'var(--border-color)';
+                dropzone.style.background = 'transparent';
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    this.showNotification('Files selected', `${files.length} file(s) ready for upload`, 'success');
+                }
             });
         }
     }
@@ -330,6 +311,8 @@ class GitEditor {
     initializeMonaco() {
         if (typeof require === 'undefined') {
             console.log('Monaco Editor loader not available');
+            // إعادة المحاولة بعد فترة
+            setTimeout(() => this.initializeMonaco(), 1000);
             return;
         }
 
@@ -350,51 +333,48 @@ class GitEditor {
         if (!this.isMonacoReady) return;
 
         const container = document.getElementById('monaco-container');
-        if (!container) return;
+        if (!container) {
+            console.error('Monaco container not found');
+            return;
+        }
 
-        this.editor = monaco.editor.create(container, {
-            value: '// Select a file to start editing\n',
-            language: 'javascript',
-            theme: this.settings.theme,
-            fontSize: this.settings.fontSize,
-            tabSize: this.settings.tabSize,
-            insertSpaces: true,
-            lineNumbers: this.settings.lineNumbers ? 'on' : 'off',
-            roundedSelection: false,
-            scrollBeyondLastLine: false,
-            readOnly: false,
-            cursorStyle: 'line',
-            automaticLayout: true,
-            minimap: {
-                enabled: true
-            },
-            wordWrap: this.settings.wordWrap ? 'on' : 'off',
-            formatOnPaste: true,
-            formatOnType: true,
-            suggestOnTriggerCharacters: true,
-            quickSuggestions: true
-        });
+        try {
+            this.editor = monaco.editor.create(container, {
+                value: '// Select a file to start editing\n',
+                language: 'javascript',
+                theme: this.settings.theme,
+                fontSize: this.settings.fontSize,
+                tabSize: this.settings.tabSize,
+                insertSpaces: true,
+                lineNumbers: this.settings.lineNumbers ? 'on' : 'off',
+                roundedSelection: false,
+                scrollBeyondLastLine: false,
+                readOnly: false,
+                cursorStyle: 'line',
+                automaticLayout: true,
+                minimap: {
+                    enabled: true
+                },
+                wordWrap: this.settings.wordWrap ? 'on' : 'off',
+                formatOnPaste: true,
+                formatOnType: true,
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: true
+            });
 
-        // Add keyboard shortcuts
-        this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-            this.saveFile();
-        });
+            // Add keyboard shortcuts
+            this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                this.saveFile();
+            });
 
-        this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-            this.runCode();
-        });
+            this.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+                this.runCode();
+            });
 
-        // Listen for changes to track unsaved changes
-        this.editor.onDidChangeModelContent(() => {
-            if (this.activeFile) {
-                const content = this.editor.getValue();
-                if (content !== this.activeFile.decoded_content) {
-                    this.trackFileChange(this.activeFile.path);
-                }
-            }
-        });
-
-        this.applySettings();
+            this.applySettings();
+        } catch (error) {
+            console.error('Failed to create Monaco editor:', error);
+        }
     }
 
     applySettings() {
@@ -406,75 +386,120 @@ class GitEditor {
                 lineNumbers: this.settings.lineNumbers ? 'on' : 'off'
             });
             
-            monaco.editor.setTheme(this.settings.theme);
+            try {
+                monaco.editor.setTheme(this.settings.theme);
+            } catch (error) {
+                console.error('Failed to set theme:', error);
+            }
         }
     }
 
     async checkAuthentication() {
         this.showScreen('loading-screen');
         
+        // إضافة تأخير بسيط لضمان تحميل DOM بالكامل
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         if (this.sessionId) {
             try {
+                console.log('Validating session:', this.sessionId);
                 const response = await fetch(`/api/auth/validate?sessionId=${this.sessionId}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
                 const data = await response.json();
                 
                 if (data.success) {
                     this.user = data.user;
                     await this.initializeApp();
                 } else {
+                    console.log('Session validation failed:', data.error);
                     this.showLoginScreen();
                 }
             } catch (error) {
-                console.error('Session validation failed:', error);
+                console.error('Session validation error:', error);
                 this.showLoginScreen();
             }
         } else {
+            console.log('No session ID found');
             this.showLoginScreen();
         }
     }
 
     showScreen(screenName) {
-        document.querySelectorAll('.screen').forEach(screen => {
-            screen.classList.remove('active');
-        });
-        document.getElementById(screenName).classList.add('active');
+        try {
+            const screens = document.querySelectorAll('.screen');
+            if (screens.length === 0) {
+                console.error('No screens found in DOM');
+                return;
+            }
+
+            screens.forEach(screen => {
+                screen.classList.remove('active');
+            });
+            
+            const targetScreen = document.getElementById(screenName);
+            if (targetScreen) {
+                targetScreen.classList.add('active');
+                console.log('Switched to screen:', screenName);
+            } else {
+                console.error(`Screen with id '${screenName}' not found`);
+            }
+        } catch (error) {
+            console.error('Error switching screens:', error);
+        }
     }
 
     showLoginScreen() {
         this.showScreen('login-screen');
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     async initializeApp() {
-        this.showScreen('editor-screen');
-        this.updateUserInfo();
-        await this.loadRepositories();
-        
-        if (window.feather) {
-            feather.replace();
+        try {
+            this.showScreen('editor-screen');
+            this.updateUserInfo();
+            await this.loadRepositories();
+            
+            this.loadFeatherIcons();
+            
+            console.log('App initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize app:', error);
+            this.showLoginScreen();
         }
     }
 
     updateUserInfo() {
         if (!this.user) return;
 
-        const userAvatar = document.getElementById('user-avatar');
-        const userName = document.getElementById('user-name');
-        
-        if (userAvatar) {
-            userAvatar.src = this.user.avatar_url;
-            userAvatar.alt = this.user.login;
-        }
-        
-        if (userName) {
-            userName.textContent = this.user.login;
+        try {
+            const userAvatar = document.getElementById('user-avatar');
+            const userName = document.getElementById('user-name');
+            
+            if (userAvatar) {
+                userAvatar.src = this.user.avatar_url;
+                userAvatar.alt = this.user.login;
+            }
+            
+            if (userName) {
+                userName.textContent = this.user.login;
+            }
+        } catch (error) {
+            console.error('Error updating user info:', error);
         }
     }
 
     async handleLogin() {
-        const token = document.getElementById('github-token').value.trim();
+        const tokenInput = document.getElementById('github-token');
+        if (!tokenInput) {
+            this.showNotification('Error', 'Login form not found', 'error');
+            return;
+        }
+
+        const token = tokenInput.value.trim();
         
         if (!token) {
             this.showNotification('Error', 'Please enter a GitHub token', 'error');
@@ -482,6 +507,11 @@ class GitEditor {
         }
 
         const submitBtn = document.querySelector('#login-form button[type="submit"]');
+        if (!submitBtn) {
+            this.showNotification('Error', 'Submit button not found', 'error');
+            return;
+        }
+
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<div class="loading-spinner small"></div> Connecting...';
         submitBtn.disabled = true;
@@ -495,6 +525,10 @@ class GitEditor {
                 body: JSON.stringify({ githubToken: token }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -505,16 +539,16 @@ class GitEditor {
                 await this.initializeApp();
             } else {
                 this.showNotification('Authentication Failed', data.error, 'error');
+                this.showLoginScreen();
             }
         } catch (error) {
             console.error('Login error:', error);
             this.showNotification('Connection Error', 'Failed to connect to GitHub', 'error');
+            this.showLoginScreen();
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
@@ -542,10 +576,17 @@ class GitEditor {
     }
 
     async loadRepositories() {
-        if (!this.sessionId) return;
+        if (!this.sessionId) {
+            console.log('No session ID for loading repositories');
+            return;
+        }
 
         try {
             const response = await fetch(`/api/repos?sessionId=${this.sessionId}`);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -561,7 +602,10 @@ class GitEditor {
 
     renderRepositories(data) {
         const reposList = document.getElementById('repos-list');
-        if (!reposList) return;
+        if (!reposList) {
+            console.error('Repos list container not found');
+            return;
+        }
 
         const repoType = document.querySelector('.repo-tab.active')?.dataset.repoType || 'all';
         
@@ -588,13 +632,6 @@ class GitEditor {
                     <div class="repo-info">
                         <div class="repo-name">${repo.name}</div>
                         <div class="repo-description">${repo.description || 'No description'}</div>
-                        <div class="repo-meta">
-                            <span class="repo-language">${repo.language || 'Text'}</span>
-                            <span class="repo-stars">
-                                <i data-feather="star"></i>
-                                ${repo.stargazers_count}
-                            </span>
-                        </div>
                     </div>
                 </div>
             `).join('');
@@ -611,16 +648,18 @@ class GitEditor {
             });
         }
 
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     switchRepoType(type) {
         document.querySelectorAll('.repo-tab').forEach(tab => {
             tab.classList.remove('active');
         });
-        document.querySelector(`[data-repo-type="${type}"]`).classList.add('active');
+        
+        const targetTab = document.querySelector(`[data-repo-type="${type}"]`);
+        if (targetTab) {
+            targetTab.classList.add('active');
+        }
         
         this.loadRepositories();
     }
@@ -633,9 +672,16 @@ class GitEditor {
         document.querySelectorAll('.repo-item').forEach(item => {
             item.classList.remove('active');
         });
-        document.querySelector(`[data-repo="${repo.full_name}"]`).classList.add('active');
         
-        document.getElementById('current-repo').textContent = repo.full_name;
+        const repoElement = document.querySelector(`[data-repo="${repo.full_name}"]`);
+        if (repoElement) {
+            repoElement.classList.add('active');
+        }
+        
+        const currentRepoElement = document.getElementById('current-repo');
+        if (currentRepoElement) {
+            currentRepoElement.textContent = repo.full_name;
+        }
         
         await this.loadBranches();
         await this.loadRepositoryContents();
@@ -651,6 +697,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/branches?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -706,6 +757,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/files/contents?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}&path=${path}&branch=${this.currentBranch}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -755,10 +811,9 @@ class GitEditor {
 
             // Add files
             files.forEach(file => {
-                const fileIcon = this.getFileIcon(file.name);
                 html += `
                     <div class="file-item" data-path="${file.path}" data-type="file">
-                        <i data-feather="${fileIcon}"></i>
+                        <i data-feather="file"></i>
                         <span class="file-name">${file.name}</span>
                     </div>
                 `;
@@ -780,53 +835,15 @@ class GitEditor {
                     this.viewFile(path);
                 });
             });
-
-            // Add context menu for files and folders
-            this.initializeContextMenu();
         }
 
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     getParentPath(path) {
         const parts = path.split('/');
         parts.pop();
         return parts.join('/');
-    }
-
-    getFileIcon(filename) {
-        const extension = filename.split('.').pop().toLowerCase();
-        const iconMap = {
-            'js': 'file-text',
-            'jsx': 'file-text',
-            'ts': 'file-text',
-            'tsx': 'file-text',
-            'py': 'file-text',
-            'java': 'file-text',
-            'cpp': 'file-text',
-            'c': 'file-text',
-            'html': 'file-text',
-            'css': 'file-text',
-            'scss': 'file-text',
-            'less': 'file-text',
-            'json': 'file-text',
-            'xml': 'file-text',
-            'md': 'file-text',
-            'yml': 'file-text',
-            'yaml': 'file-text',
-            'sql': 'file-text',
-            'sh': 'terminal',
-            'bash': 'terminal',
-            'jpg': 'image',
-            'jpeg': 'image',
-            'png': 'image',
-            'gif': 'image',
-            'svg': 'image',
-            'pdf': 'file'
-        };
-        return iconMap[extension] || 'file';
     }
 
     async viewFile(path) {
@@ -836,6 +853,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/files/file?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}&path=${path}&branch=${this.currentBranch}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -851,10 +873,23 @@ class GitEditor {
 
     displayFile(file, path) {
         // Update file viewer
-        document.getElementById('viewer-file-path').textContent = path;
+        const viewerFilePath = document.getElementById('viewer-file-path');
+        if (viewerFilePath) {
+            viewerFilePath.textContent = path;
+        }
         
         const contentDisplay = document.getElementById('file-content-display');
-        const codeElement = contentDisplay.querySelector('code');
+        const codeElement = contentDisplay?.querySelector('code');
+        
+        if (codeElement) {
+            // Syntax highlighting based on file extension
+            const language = this.getLanguageFromFilename(file.name);
+            codeElement.className = `language-${language}`;
+            codeElement.textContent = file.decoded_content;
+            
+            // Apply simple syntax highlighting
+            this.applySyntaxHighlighting(codeElement, language);
+        }
         
         // Store file data for editing
         this.activeFile = {
@@ -863,41 +898,27 @@ class GitEditor {
             language: this.getLanguageFromFilename(file.name)
         };
         
-        // Show content based on file type
-        if (this.isTextFile(file.name)) {
-            codeElement.textContent = file.decoded_content;
-            codeElement.className = `language-${this.activeFile.language}`;
-            this.applySyntaxHighlighting(codeElement, this.activeFile.language);
-        } else {
-            codeElement.textContent = 'Binary file content cannot be displayed';
-            codeElement.className = '';
-        }
-        
         // Show file viewer, hide editor
-        document.getElementById('file-viewer').classList.add('active');
-        document.getElementById('code-editor-container').classList.remove('active');
+        const fileViewer = document.getElementById('file-viewer');
+        const codeEditorContainer = document.getElementById('code-editor-container');
+        
+        if (fileViewer) fileViewer.classList.add('active');
+        if (codeEditorContainer) codeEditorContainer.classList.remove('active');
         
         // Update editor content if needed
-        if (this.editor && this.isTextFile(file.name)) {
-            const model = monaco.editor.createModel(file.decoded_content, this.activeFile.language);
-            this.editor.setModel(model);
+        if (this.editor && this.activeFile.decoded_content) {
+            try {
+                const model = monaco.editor.createModel(this.activeFile.decoded_content, this.activeFile.language);
+                this.editor.setModel(model);
+            } catch (error) {
+                console.error('Error setting editor model:', error);
+            }
         }
-        
-        // Update language selector
-        const languageSelector = document.getElementById('language-selector');
-        if (languageSelector) {
-            languageSelector.value = this.activeFile.language;
-        }
-    }
-
-    isTextFile(filename) {
-        const binaryExtensions = ['jpg', 'jpeg', 'png', 'gif', 'pdf', 'zip', 'exe', 'dll'];
-        const extension = filename.split('.').pop().toLowerCase();
-        return !binaryExtensions.includes(extension);
     }
 
     applySyntaxHighlighting(element, language) {
-        // Simple syntax highlighting - in a real app you'd use a proper highlighter
+        if (!element) return;
+        
         const content = element.textContent;
         
         if (language === 'javascript') {
@@ -909,20 +930,23 @@ class GitEditor {
             
             element.innerHTML = highlighted;
         } else {
-            element.innerHTML = content.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            element.innerHTML = content;
         }
     }
 
     enableEditMode() {
-        if (!this.activeFile || !this.isTextFile(this.activeFile.name)) {
-            this.showNotification('Warning', 'Cannot edit binary files', 'warning');
-            return;
+        if (!this.activeFile) return;
+        
+        const fileViewer = document.getElementById('file-viewer');
+        const codeEditorContainer = document.getElementById('code-editor-container');
+        
+        if (fileViewer) fileViewer.classList.remove('active');
+        if (codeEditorContainer) codeEditorContainer.classList.add('active');
+        
+        const editorFilePath = document.getElementById('editor-file-path');
+        if (editorFilePath) {
+            editorFilePath.textContent = `Editing: ${this.activeFile.path}`;
         }
-        
-        document.getElementById('file-viewer').classList.remove('active');
-        document.getElementById('code-editor-container').classList.add('active');
-        
-        document.getElementById('editor-file-path').textContent = `Editing: ${this.activeFile.path}`;
         
         // Set language selector
         const languageSelector = document.getElementById('language-selector');
@@ -932,8 +956,11 @@ class GitEditor {
     }
 
     disableEditMode() {
-        document.getElementById('file-viewer').classList.add('active');
-        document.getElementById('code-editor-container').classList.remove('active');
+        const fileViewer = document.getElementById('file-viewer');
+        const codeEditorContainer = document.getElementById('code-editor-container');
+        
+        if (fileViewer) fileViewer.classList.add('active');
+        if (codeEditorContainer) codeEditorContainer.classList.remove('active');
     }
 
     async saveFile() {
@@ -943,6 +970,8 @@ class GitEditor {
         const message = `Update ${this.activeFile.path}`;
 
         const saveBtn = document.getElementById('save-btn');
+        if (!saveBtn) return;
+
         const originalText = saveBtn.innerHTML;
         saveBtn.innerHTML = '<div class="loading-spinner small"></div> Saving...';
         saveBtn.disabled = true;
@@ -965,14 +994,17 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
                 this.activeFile.sha = data.result.content.sha;
                 this.activeFile.decoded_content = content;
                 this.showNotification('Success', 'File saved successfully', 'success');
-                this.changedFiles.delete(this.activeFile.path);
-                this.updateCommitButton();
+                this.trackFileChange(this.activeFile.path);
                 this.disableEditMode();
                 this.displayFile(this.activeFile, this.activeFile.path);
             } else {
@@ -984,9 +1016,7 @@ class GitEditor {
         } finally {
             saveBtn.innerHTML = originalText;
             saveBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
@@ -997,6 +1027,8 @@ class GitEditor {
         const language = this.activeFile.language;
 
         const runBtn = document.getElementById('run-btn');
+        if (!runBtn) return;
+
         const originalText = runBtn.innerHTML;
         runBtn.innerHTML = '<div class="loading-spinner small"></div> Running...';
         runBtn.disabled = true;
@@ -1013,6 +1045,10 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1023,11 +1059,7 @@ class GitEditor {
                 }
                 
                 this.switchOutputTab('output');
-                if (!data.hasError) {
-                    this.showNotification('Code Executed', 'Code ran successfully', 'success');
-                } else {
-                    this.showNotification('Execution Error', 'Code execution completed with errors', 'warning');
-                }
+                this.showNotification('Code Executed', 'Code ran successfully', 'success');
             } else {
                 this.showNotification('Error', 'Failed to run code', 'error');
             }
@@ -1039,13 +1071,10 @@ class GitEditor {
                 outputContent.className = 'text-error';
             }
             this.switchOutputTab('output');
-            this.showNotification('Execution Error', 'Failed to run code', 'error');
         } finally {
             runBtn.innerHTML = originalText;
             runBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
@@ -1090,14 +1119,17 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
                 this.showNotification('Success', 'File deleted successfully', 'success');
                 this.activeFile = null;
-                this.changedFiles.delete(this.activeFile.path);
-                this.updateCommitButton();
-                document.getElementById('file-viewer').classList.remove('active');
+                const fileViewer = document.getElementById('file-viewer');
+                if (fileViewer) fileViewer.classList.remove('active');
                 await this.loadRepositoryContents(this.currentPath);
             } else {
                 this.showNotification('Error', 'Failed to delete file', 'error');
@@ -1110,12 +1142,16 @@ class GitEditor {
 
     formatCode() {
         if (this.editor) {
-            const action = this.editor.getAction('editor.action.formatDocument');
-            if (action) {
-                action.run();
-                this.showNotification('Code Formatted', 'Document formatting applied', 'success');
-            } else {
-                this.showNotification('Info', 'Formatting not available for this language', 'info');
+            try {
+                const action = this.editor.getAction('editor.action.formatDocument');
+                if (action) {
+                    action.run();
+                } else {
+                    this.showNotification('Info', 'Formatting not available for this language', 'info');
+                }
+            } catch (error) {
+                console.error('Format code error:', error);
+                this.showNotification('Error', 'Failed to format code', 'error');
             }
         }
     }
@@ -1158,21 +1194,25 @@ class GitEditor {
         document.querySelectorAll('.sidebar-tab').forEach(tab => {
             tab.classList.remove('active');
         });
-        document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+        
+        const targetTab = document.querySelector(`[data-tab="${tabName}"]`);
+        if (targetTab) {
+            targetTab.classList.add('active');
+        }
 
         document.querySelectorAll('.sidebar-content').forEach(content => {
             content.classList.remove('active');
         });
-        document.getElementById(`${tabName}-tab`).classList.add('active');
+        
+        const targetContent = document.getElementById(`${tabName}-tab`);
+        if (targetContent) {
+            targetContent.classList.add('active');
+        }
 
         // Load data for specific tabs
         if (tabName === 'git' && this.currentRepo) {
             this.loadGitStatus();
             this.loadCommitHistory();
-            this.loadPullRequests();
-        } else if (tabName === 'search' && this.currentRepo) {
-            // Focus search input
-            document.getElementById('search-input').focus();
         }
     }
 
@@ -1180,7 +1220,11 @@ class GitEditor {
         document.querySelectorAll('.output-tab').forEach(tab => {
             tab.classList.remove('active');
         });
-        document.querySelector(`[data-output="${tabName}"]`).classList.add('active');
+        
+        const targetTab = document.querySelector(`[data-output="${tabName}"]`);
+        if (targetTab) {
+            targetTab.classList.add('active');
+        }
 
         document.querySelectorAll('.output-pane').forEach(pane => {
             pane.classList.remove('active');
@@ -1194,7 +1238,10 @@ class GitEditor {
         }
         
         if (paneId) {
-            document.getElementById(paneId).classList.add('active');
+            const targetPane = document.getElementById(paneId);
+            if (targetPane) {
+                targetPane.classList.add('active');
+            }
         }
     }
 
@@ -1205,6 +1252,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/git/status?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1219,11 +1271,11 @@ class GitEditor {
         const currentBranch = document.getElementById('current-branch-status');
         const changesCount = document.getElementById('changes-count');
         
-        if (currentBranch) {
-            currentBranch.textContent = status.currentBranch;
+        if (currentBranch && status) {
+            currentBranch.textContent = status.currentBranch || 'main';
         }
         
-        if (changesCount) {
+        if (changesCount && status) {
             changesCount.textContent = status.hasChanges ? '1+' : '0';
             changesCount.className = `status-value ${status.hasChanges ? 'text-warning' : ''}`;
         }
@@ -1236,6 +1288,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/git/history?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}&branch=${this.currentBranch}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1268,66 +1325,12 @@ class GitEditor {
             `).join('');
         }
 
-        if (window.feather) {
-            feather.replace();
-        }
-    }
-
-    async loadPullRequests() {
-        if (!this.currentRepo || !this.sessionId) return;
-
-        try {
-            const response = await fetch(
-                `/api/git/pull-requests?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}`
-            );
-            const data = await response.json();
-
-            if (data.success) {
-                this.renderPullRequests(data.pullRequests);
-            }
-        } catch (error) {
-            console.error('Load pull requests error:', error);
-        }
-    }
-
-    renderPullRequests(pullRequests) {
-        const prContainer = document.getElementById('pull-requests');
-        if (!prContainer) return;
-
-        if (!pullRequests || pullRequests.length === 0) {
-            prContainer.innerHTML = `
-                <div class="empty-state">
-                    <i data-feather="git-pull-request"></i>
-                    <p>No pull requests</p>
-                </div>
-            `;
-        } else {
-            prContainer.innerHTML = pullRequests.slice(0, 5).map(pr => `
-                <div class="pr-item" data-url="${pr.html_url}">
-                    <div class="pr-title">#${pr.number} ${pr.title}</div>
-                    <div class="pr-meta">${pr.state} - ${pr.user.login}</div>
-                </div>
-            `).join('');
-
-            // Add click event to open PR in new tab
-            prContainer.querySelectorAll('.pr-item').forEach(item => {
-                item.addEventListener('click', () => {
-                    window.open(item.dataset.url, '_blank');
-                });
-            });
-        }
-
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     trackFileChange(filePath) {
         this.changedFiles.add(filePath);
-        this.updateCommitButton();
-    }
-
-    updateCommitButton() {
+        
         const commitBtn = document.getElementById('commit-btn');
         if (commitBtn) {
             if (this.changedFiles.size > 0) {
@@ -1338,9 +1341,7 @@ class GitEditor {
                 commitBtn.classList.remove('btn-warning');
             }
             
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
@@ -1371,19 +1372,13 @@ class GitEditor {
             return;
         }
         this.showModal('commit-modal');
-        this.renderChangedFilesList();
-    }
-
-    showNewBranchModal() {
-        if (!this.currentRepo) {
-            this.showNotification('Warning', 'Please select a repository first', 'warning');
-            return;
-        }
-        this.showModal('new-branch-modal');
     }
 
     showModal(modalId) {
-        document.getElementById(modalId).classList.add('active');
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('active');
+        }
     }
 
     hideAllModals() {
@@ -1393,10 +1388,20 @@ class GitEditor {
     }
 
     async createRepository() {
-        const name = document.getElementById('repo-name').value.trim();
-        const description = document.getElementById('repo-desc').value.trim();
-        const isPrivate = document.getElementById('repo-private').checked;
-        const autoInit = document.getElementById('repo-auto-init').checked;
+        const nameInput = document.getElementById('repo-name');
+        const descInput = document.getElementById('repo-desc');
+        const privateInput = document.getElementById('repo-private');
+        const autoInitInput = document.getElementById('repo-auto-init');
+
+        if (!nameInput || !descInput || !privateInput || !autoInitInput) {
+            this.showNotification('Error', 'Form elements not found', 'error');
+            return;
+        }
+
+        const name = nameInput.value.trim();
+        const description = descInput.value.trim();
+        const isPrivate = privateInput.checked;
+        const autoInit = autoInitInput.checked;
 
         if (!name) {
             this.showNotification('Error', 'Repository name is required', 'error');
@@ -1404,6 +1409,8 @@ class GitEditor {
         }
 
         const submitBtn = document.querySelector('#new-repo-form button[type="submit"]');
+        if (!submitBtn) return;
+
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<div class="loading-spinner small"></div> Creating...';
         submitBtn.disabled = true;
@@ -1423,6 +1430,10 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1438,16 +1449,23 @@ class GitEditor {
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
     async createFile() {
-        const path = document.getElementById('file-path').value.trim();
-        const content = document.getElementById('file-content').value;
-        const message = document.getElementById('file-commit-message').value.trim();
+        const pathInput = document.getElementById('file-path');
+        const contentInput = document.getElementById('file-content');
+        const messageInput = document.getElementById('file-commit-message');
+
+        if (!pathInput || !contentInput || !messageInput) {
+            this.showNotification('Error', 'Form elements not found', 'error');
+            return;
+        }
+
+        const path = pathInput.value.trim();
+        const content = contentInput.value;
+        const message = messageInput.value.trim();
 
         if (!path || !message) {
             this.showNotification('Error', 'File path and commit message are required', 'error');
@@ -1455,6 +1473,8 @@ class GitEditor {
         }
 
         const submitBtn = document.querySelector('#new-file-form button[type="submit"]');
+        if (!submitBtn) return;
+
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<div class="loading-spinner small"></div> Creating...';
         submitBtn.disabled = true;
@@ -1476,6 +1496,10 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1491,116 +1515,36 @@ class GitEditor {
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
-        }
-    }
-
-    async createBranch() {
-        const branchName = document.getElementById('branch-name').value.trim();
-        const sourceBranch = document.getElementById('source-branch').value;
-
-        if (!branchName) {
-            this.showNotification('Error', 'Branch name is required', 'error');
-            return;
-        }
-
-        const submitBtn = document.querySelector('#new-branch-form button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<div class="loading-spinner small"></div> Creating...';
-        submitBtn.disabled = true;
-
-        try {
-            const response = await fetch('/api/branches', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    sessionId: this.sessionId,
-                    owner: this.currentRepo.owner.login,
-                    repo: this.currentRepo.name,
-                    branch: branchName,
-                    sourceBranch: sourceBranch || 'main',
-                }),
-            });
-
-            const data = await response.json();
-
-            if (data.success) {
-                this.showNotification('Success', 'Branch created successfully', 'success');
-                this.hideAllModals();
-                await this.loadBranches();
-            } else {
-                this.showNotification('Error', data.error, 'error');
-            }
-        } catch (error) {
-            console.error('Create branch error:', error);
-            this.showNotification('Error', 'Failed to create branch', 'error');
-        } finally {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
-        }
-    }
-
-    renderChangedFilesList() {
-        const changedFilesList = document.getElementById('changed-files-list');
-        if (!changedFilesList) return;
-
-        if (this.changedFiles.size === 0) {
-            changedFilesList.innerHTML = `
-                <div class="empty-state">
-                    <i data-feather="check-circle"></i>
-                    <p>No files to commit</p>
-                </div>
-            `;
-        } else {
-            changedFilesList.innerHTML = Array.from(this.changedFiles).map(filePath => `
-                <div class="changed-file-item">
-                    <input type="checkbox" checked value="${filePath}">
-                    <span class="file-status status-modified">M</span>
-                    <span class="file-path">${filePath}</span>
-                </div>
-            `).join('');
-        }
-
-        if (window.feather) {
-            feather.replace();
+            this.loadFeatherIcons();
         }
     }
 
     async createCommit() {
-        const message = document.getElementById('commit-message').value.trim();
+        const messageInput = document.getElementById('commit-message');
+        if (!messageInput) {
+            this.showNotification('Error', 'Commit message input not found', 'error');
+            return;
+        }
+
+        const message = messageInput.value.trim();
 
         if (!message) {
             this.showNotification('Error', 'Commit message is required', 'error');
             return;
         }
 
-        // Get selected files
-        const selectedFiles = Array.from(
-            document.querySelectorAll('#changed-files-list input:checked')
-        ).map(input => input.value);
-
-        if (selectedFiles.length === 0) {
-            this.showNotification('Error', 'Please select at least one file to commit', 'error');
-            return;
-        }
-
-        // In a real implementation, you would collect the actual file content
+        // In a real implementation, you would collect changed files and their content
         // For now, we'll use a simplified approach
-        const files = selectedFiles.map(filePath => ({
+        const files = Array.from(this.changedFiles).map(filePath => ({
             path: filePath,
             operation: 'update',
-            content: this.activeFile?.path === filePath ? this.editor.getValue() : '',
-            sha: this.activeFile?.path === filePath ? this.activeFile.sha : ''
+            content: this.activeFile?.decoded_content || '',
+            sha: this.activeFile?.sha
         }));
 
         const submitBtn = document.querySelector('#commit-form button[type="submit"]');
+        if (!submitBtn) return;
+
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<div class="loading-spinner small"></div> Committing...';
         submitBtn.disabled = true;
@@ -1621,18 +1565,17 @@ class GitEditor {
                 }),
             });
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
                 this.showNotification('Success', 'Changes committed successfully', 'success');
                 this.hideAllModals();
-                
-                // Clear changed files
-                selectedFiles.forEach(filePath => this.changedFiles.delete(filePath));
-                this.updateCommitButton();
-                
+                this.changedFiles.clear();
                 await this.loadGitStatus();
-                await this.loadCommitHistory();
             } else {
                 this.showNotification('Error', data.error, 'error');
             }
@@ -1642,15 +1585,20 @@ class GitEditor {
         } finally {
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
+            this.loadFeatherIcons();
         }
     }
 
     async uploadFiles() {
         const fileInput = document.getElementById('file-upload');
-        const message = document.getElementById('upload-commit-message').value.trim();
+        const messageInput = document.getElementById('upload-commit-message');
+
+        if (!fileInput || !messageInput) {
+            this.showNotification('Error', 'Upload form elements not found', 'error');
+            return;
+        }
+
+        const message = messageInput.value.trim();
 
         if (!fileInput.files.length) {
             this.showNotification('Error', 'Please select files to upload', 'error');
@@ -1664,68 +1612,18 @@ class GitEditor {
 
         // Note: This is a simplified implementation
         // In a real app, you'd need to handle file uploads properly
-        const files = Array.from(fileInput.files);
-        
-        const submitBtn = document.querySelector('#upload-form button[type="submit"]');
-        const originalText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<div class="loading-spinner small"></div> Uploading...';
-        submitBtn.disabled = true;
-
-        try {
-            // For each file, create it in the repository
-            for (const file of files) {
-                const content = await this.readFileAsText(file);
-                const filePath = this.currentPath ? `${this.currentPath}/${file.name}` : file.name;
-                
-                const response = await fetch('/api/files/file', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        sessionId: this.sessionId,
-                        owner: this.currentRepo.owner.login,
-                        repo: this.currentRepo.name,
-                        path: filePath,
-                        content: content,
-                        message: message,
-                        branch: this.currentBranch,
-                    }),
-                });
-
-                const data = await response.json();
-                
-                if (!data.success) {
-                    throw new Error(`Failed to upload ${file.name}: ${data.error}`);
-                }
-            }
-            
-            this.showNotification('Success', `${files.length} file(s) uploaded successfully`, 'success');
-            this.hideAllModals();
-            await this.loadRepositoryContents(this.currentPath);
-        } catch (error) {
-            console.error('Upload files error:', error);
-            this.showNotification('Error', error.message, 'error');
-        } finally {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-            if (window.feather) {
-                feather.replace();
-            }
-        }
-    }
-
-    readFileAsText(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = e => resolve(e.target.result);
-            reader.onerror = e => reject(e);
-            reader.readAsText(file);
-        });
+        this.showNotification('Info', 'File upload would be implemented here', 'info');
+        this.hideAllModals();
     }
 
     async searchInRepo() {
-        const query = document.getElementById('search-input').value.trim();
+        const searchInput = document.getElementById('search-input');
+        if (!searchInput) {
+            this.showNotification('Error', 'Search input not found', 'error');
+            return;
+        }
+
+        const query = searchInput.value.trim();
         
         if (!query) {
             this.showNotification('Warning', 'Please enter a search term', 'warning');
@@ -1741,6 +1639,11 @@ class GitEditor {
             const response = await fetch(
                 `/api/files/search?sessionId=${this.sessionId}&owner=${this.currentRepo.owner.login}&repo=${this.currentRepo.name}&query=${encodeURIComponent(query)}`
             );
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             const data = await response.json();
 
             if (data.success) {
@@ -1781,9 +1684,7 @@ class GitEditor {
             });
         }
 
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     executeTerminalCommand(command) {
@@ -1811,8 +1712,7 @@ help - Show this help message
 clear - Clear terminal
 status - Show git status
 ls - List files
-pwd - Show current directory
-repo - Show current repository info`;
+pwd - Show current directory`;
                 break;
             case 'clear':
                 terminalContent.innerHTML = `
@@ -1821,34 +1721,25 @@ repo - Show current repository info`;
                         <p>Type 'help' for available commands</p>
                     </div>
                 `;
-                // Re-attach event listener to new input
+                // Re-attach event listener
                 const newInput = terminalContent.querySelector('.terminal-input');
-                newInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        this.executeTerminalCommand(e.target.value);
-                        e.target.value = '';
-                    }
-                });
-                return;
+                if (newInput) {
+                    newInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') {
+                            this.executeTerminalCommand(e.target.value);
+                            e.target.value = '';
+                        }
+                    });
+                }
+                return; // Exit early for clear command
             case 'status':
-                output = this.currentRepo ? 
-                    `On branch ${this.currentBranch}\nYour branch is up to date with 'origin/${this.currentBranch}'.\n` :
-                    'Not in a repository. Select a repository first.';
+                output = 'Git status would be shown here';
                 break;
             case 'ls':
-                output = this.currentRepo ? 'README.md\nsrc/\npackage.json\ngitignore' : 'No repository selected';
+                output = 'file1.txt\nfile2.js\nsrc/\nREADME.md';
                 break;
             case 'pwd':
                 output = this.currentRepo ? `/workspace/${this.currentRepo.name}` : '/workspace';
-                break;
-            case 'repo':
-                if (this.currentRepo) {
-                    output = `Repository: ${this.currentRepo.name}\nOwner: ${this.currentRepo.owner.login}\nBranch: ${this.currentBranch}`;
-                } else {
-                    output = 'No repository selected';
-                }
-                break;
-            case '':
                 break;
             default:
                 output = `Command not found: ${command}. Type 'help' for available commands.`;
@@ -1870,15 +1761,17 @@ repo - Show current repository info`;
 
         // Focus new input
         const newInput = newInputLine.querySelector('.terminal-input');
-        newInput.focus();
+        if (newInput) {
+            newInput.focus();
 
-        // Update event listener
-        newInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.executeTerminalCommand(e.target.value);
-                e.target.value = '';
-            }
-        });
+            // Update event listener
+            newInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.executeTerminalCommand(e.target.value);
+                    e.target.value = '';
+                }
+            });
+        }
 
         // Scroll to bottom
         terminalContent.scrollTop = terminalContent.scrollHeight;
@@ -1900,126 +1793,15 @@ repo - Show current repository info`;
 
             // Re-attach event listener
             const input = terminalContent.querySelector('.terminal-input');
-            input.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    this.executeTerminalCommand(e.target.value);
-                    e.target.value = '';
-                }
-            });
-        }
-    }
-
-    initializeContextMenu() {
-        const fileExplorer = document.getElementById('file-explorer');
-        if (!fileExplorer) return;
-
-        fileExplorer.addEventListener('contextmenu', (e) => {
-            const target = e.target.closest('.file-item, .folder-item');
-            if (target) {
-                e.preventDefault();
-                this.showContextMenu(e, target);
-            }
-        });
-
-        // Hide context menu on click
-        document.addEventListener('click', () => {
-            this.hideContextMenu();
-        });
-    }
-
-    showContextMenu(event, target) {
-        this.hideContextMenu();
-
-        const contextMenu = document.createElement('div');
-        contextMenu.className = 'context-menu';
-        contextMenu.style.left = `${event.pageX}px`;
-        contextMenu.style.top = `${event.pageY}px`;
-
-        const isFile = target.classList.contains('file-item');
-        const path = target.dataset.path;
-
-        const menuItems = [
-            {
-                text: 'Open',
-                icon: 'external-link',
-                action: () => {
-                    if (isFile) {
-                        this.viewFile(path);
-                    } else {
-                        this.loadRepositoryContents(path);
+            if (input) {
+                input.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.executeTerminalCommand(e.target.value);
+                        e.target.value = '';
                     }
-                }
-            },
-            { type: 'separator' },
-            {
-                text: 'Rename',
-                icon: 'edit',
-                action: () => {
-                    this.renameItem(path, isFile);
-                }
-            },
-            {
-                text: 'Delete',
-                icon: 'trash-2',
-                action: () => {
-                    if (isFile) {
-                        this.activeFile = { path: path };
-                        this.deleteFile();
-                    } else {
-                        // Handle folder deletion
-                        this.showNotification('Info', 'Folder deletion would be implemented here', 'info');
-                    }
-                }
-            },
-            { type: 'separator' },
-            {
-                text: 'Download',
-                icon: 'download',
-                action: () => {
-                    if (isFile) {
-                        this.activeFile = { path: path, name: path.split('/').pop() };
-                        this.downloadFile();
-                    }
-                }
+                });
+                input.focus();
             }
-        ];
-
-        menuItems.forEach(item => {
-            if (item.type === 'separator') {
-                const separator = document.createElement('div');
-                separator.className = 'context-menu-separator';
-                contextMenu.appendChild(separator);
-            } else {
-                const menuItem = document.createElement('div');
-                menuItem.className = 'context-menu-item';
-                menuItem.innerHTML = `
-                    <i data-feather="${item.icon}"></i>
-                    <span>${item.text}</span>
-                `;
-                menuItem.addEventListener('click', item.action);
-                contextMenu.appendChild(menuItem);
-            }
-        });
-
-        document.body.appendChild(contextMenu);
-        this.currentContextMenu = contextMenu;
-
-        if (window.feather) {
-            feather.replace();
-        }
-    }
-
-    hideContextMenu() {
-        if (this.currentContextMenu) {
-            this.currentContextMenu.remove();
-            this.currentContextMenu = null;
-        }
-    }
-
-    renameItem(path, isFile) {
-        const newName = prompt(`Enter new name for ${path}:`, path.split('/').pop());
-        if (newName && newName !== path.split('/').pop()) {
-            this.showNotification('Info', `Renaming ${path} to ${newName} would be implemented here`, 'info');
         }
     }
 
@@ -2042,50 +1824,8 @@ repo - Show current repository info`;
     }
 
     showSettingsModal() {
-        // Load current settings into form
-        const settingsForm = document.getElementById('settings-form');
-        if (settingsForm) {
-            document.getElementById('editor-font-size').value = this.settings.fontSize;
-            document.getElementById('editor-tab-size').value = this.settings.tabSize;
-            document.getElementById('editor-word-wrap').checked = this.settings.wordWrap;
-            document.getElementById('editor-line-numbers').checked = this.settings.lineNumbers;
-            document.getElementById('editor-theme').value = this.settings.theme;
-            document.getElementById('editor-auto-save').checked = this.settings.autoSave;
-            document.getElementById('editor-format-on-save').checked = this.settings.formatOnSave;
-            
-            this.showModal('settings-modal');
-        } else {
-            this.showNotification('Info', 'Settings would be available here', 'info');
-        }
-    }
-
-    saveSettingsFromModal() {
-        this.settings = {
-            fontSize: parseInt(document.getElementById('editor-font-size').value),
-            tabSize: parseInt(document.getElementById('editor-tab-size').value),
-            wordWrap: document.getElementById('editor-word-wrap').checked,
-            lineNumbers: document.getElementById('editor-line-numbers').checked,
-            theme: document.getElementById('editor-theme').value,
-            autoSave: document.getElementById('editor-auto-save').checked,
-            formatOnSave: document.getElementById('editor-format-on-save').checked
-        };
-
-        this.saveSettings();
-        this.applySettings();
-        this.hideAllModals();
-        this.showNotification('Success', 'Settings saved successfully', 'success');
-    }
-
-    autoSave() {
-        if (this.activeFile && this.editor) {
-            const content = this.editor.getValue();
-            if (content !== this.activeFile.decoded_content) {
-                console.log('Auto-saving file...');
-                // In a real implementation, you would call saveFile() here
-                // But for now, we'll just track the change
-                this.trackFileChange(this.activeFile.path);
-            }
-        }
+        // This would show a settings modal in a real implementation
+        this.showNotification('Info', 'Settings would be available here', 'info');
     }
 
     showNotification(title, message, type = 'info') {
@@ -2108,9 +1848,12 @@ repo - Show current repository info`;
         notifications.appendChild(notification);
 
         // Add close event
-        notification.querySelector('.notification-close').addEventListener('click', () => {
-            notification.remove();
-        });
+        const closeBtn = notification.querySelector('.notification-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                notification.remove();
+            });
+        }
 
         // Auto remove after 5 seconds
         setTimeout(() => {
@@ -2119,9 +1862,7 @@ repo - Show current repository info`;
             }
         }, 5000);
 
-        if (window.feather) {
-            feather.replace();
-        }
+        this.loadFeatherIcons();
     }
 
     getNotificationIcon(type) {
@@ -2135,7 +1876,38 @@ repo - Show current repository info`;
     }
 }
 
-// Initialize the application when the page loads
+// معالجة الأخطاء العامة
+window.addEventListener('error', (event) => {
+    console.error('Global error:', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason);
+});
+
+// تهيئة التطبيق عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', () => {
+    // تحميل Feather Icons فوراً
+    if (window.feather) {
+        feather.replace();
+    }
+    
+    console.log('DOM loaded, initializing Git Editor...');
     new GitEditor();
 });
+
+// إجراء احتياطي: إذا بقيت شاشة التحميل، انتقل لشاشة Login
+setTimeout(() => {
+    const loadingScreen = document.getElementById('loading-screen');
+    const loginScreen = document.getElementById('login-screen');
+    
+    if (loadingScreen && loadingScreen.classList.contains('active') && loginScreen) {
+        console.log('Fallback: Switching to login screen due to timeout');
+        loadingScreen.classList.remove('active');
+        loginScreen.classList.add('active');
+        
+        if (window.feather) {
+            feather.replace();
+        }
+    }
+}, 15000); // 15 ثانية

@@ -1390,3 +1390,6 @@ body {
 .bg-info {
   background: var(--info-color);
 }
+
+.screen { display: none; }
+.screen.active { display: block; }

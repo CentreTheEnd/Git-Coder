@@ -58,7 +58,7 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log(`Git Coder server running on port ${PORT}`);
   console.log(`Open http://localhost:${PORT} to view the app`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
